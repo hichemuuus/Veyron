@@ -1,0 +1,92 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: #070b12;
+  background-image: radial-gradient(
+      ellipse 80% 50% at 50% -10%,
+      rgba(6, 180, 216, 0.08),
+      transparent 60%
+    ),
+    linear-gradient(rgba(30, 211, 244, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(30, 211, 244, 0.035) 1px, transparent 1px);
+  background-size: auto, 32px 32px, 32px 32px;
+  background-attachment: fixed;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Tabular numerals everywhere data is shown. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
+/* Thin, dark scrollbars. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(72, 90, 118, 0.45);
+  border-radius: 8px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(82, 230, 255, 0.4);
+  background-clip: content-box;
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-ink-700/70 bg-ink-850/80 shadow-panel backdrop-blur-sm;
+  }
+  .panel-tight {
+    @apply rounded-lg border border-ink-700/60 bg-ink-900/60;
+  }
+  .hud-label {
+    @apply font-mono text-[10px] uppercase tracking-[0.18em] text-ink-400;
+  }
+  .data-mono {
+    @apply font-mono tnum;
+  }
+  .focus-ring {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-sig-400/60 focus-visible:ring-offset-0;
+  }
+}
+
+/* Subtle sweep used on indeterminate progress / scanning bars. */
+.scanbar {
+  position: relative;
+  overflow: hidden;
+}
+.scanbar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 25%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(82, 230, 255, 0.55),
+    transparent
+  );
+  animation: sweep 1.6s ease-in-out infinite;
+}

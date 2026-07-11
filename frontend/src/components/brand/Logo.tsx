@@ -1,0 +1,37 @@
+/** The PAIOS wordmark + mark. */
+export function Logo({ size = 28 }: { size?: number }) {
+  return (
+    <div className="flex items-center gap-2.5">
+      <Mark size={size} />
+      <div className="leading-none">
+        <div className="font-mono text-sm font-semibold tracking-[0.28em] text-gray-100">
+          PAIOS
+        </div>
+        <div className="hud-label mt-0.5 text-[9px]">AI OPERATING SYSTEM</div>
+      </div>
+    </div>
+  )
+}
+
+export function Mark({ size = 28 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden>
+      <rect width="32" height="32" rx="7" fill="#0a0f18" />
+      <rect
+        x="0.5"
+        y="0.5"
+        width="31"
+        height="31"
+        rx="6.5"
+        fill="none"
+        stroke="#1ed3f4"
+        strokeOpacity="0.4"
+      />
+      <path
+        d="M8 21 L8 11 L12 11 L16 17 L20 11 L24 11 L24 21 L21 21 L21 15 L17 21 L15 21 L11 15 L11 21 Z"
+        fill="#52e6ff"
+      />
+      <circle cx="16" cy="7" r="1.6" fill="#16c089" />
+    </svg>
+  )
+}

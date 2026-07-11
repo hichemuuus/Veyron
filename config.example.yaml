@@ -1,0 +1,27 @@
+# PAIOS configuration.
+# Copy to config.yaml and edit. config.yaml is gitignored.
+# Every key here is optional; built-in defaults live in backend/paios/config.py.
+
+environment: dev  # dev | prod
+
+# security:
+#   sandbox_roots:
+#     - "C:\\Users\\YourUsername"
+#     - "C:\\Users\\YourUsername\\projects\\paios"
+#   confirm_timeout_seconds: 120
+#   agent_max_iterations: 12
+#   max_tool_output_chars: 8000
+
+# model:
+#   ollama_url: "http://localhost:11434"
+#   base_model: "qwen2.5:3b-instruct"
+#   embedding_model: "nomic-embed-text"
+#   temperature: 0.2
+#   max_tokens: 1024
+#   require_local_model: true
+
+# server:
+#   host: "127.0.0.1"
+#   port: 8000
+#   cors_origins:
+#     - "http://localhost:5173"
