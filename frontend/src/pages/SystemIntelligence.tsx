@@ -96,7 +96,7 @@ export function SystemIntelligencePage() {
     <div className="mx-auto max-w-6xl px-8 py-8 page-enter">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-display-sm font-semibold text-ink-900">System</h1>
+          <h1 className="font-display text-display-sm font-medium text-ink-900">System</h1>
           <p className="mt-1 text-sm text-ink-500">
             How the machine is doing — processor, memory, storage, and processes.
           </p>
@@ -153,7 +153,7 @@ export function SystemIntelligencePage() {
           {overview ? (
             <>
               <div className="mb-2 flex items-baseline justify-between">
-                <span className={`font-display text-3xl font-semibold ${cpuWarn ? 'text-warn-600' : 'text-ink-900'}`}>
+                <span className={`font-display text-3xl font-medium ${cpuWarn ? 'text-warn-600' : 'text-ink-900'}`}>
                   {fmtPct(overview.cpu_percent, 1)}
                 </span>
                 <span className="font-mono text-[10px] text-ink-400">overall utilization</span>
@@ -198,7 +198,7 @@ export function SystemIntelligencePage() {
           {overview && mem ? (
             <>
               <div className="mb-2 flex items-baseline justify-between">
-                <span className={`font-display text-3xl font-semibold ${memWarn ? 'text-warn-600' : 'text-ink-900'}`}>
+                <span className={`font-display text-3xl font-medium ${memWarn ? 'text-warn-600' : 'text-ink-900'}`}>
                   {fmtPct(overview.memory_percent, 1)}
                 </span>
                 <span className="font-mono text-[10px] text-ink-400">
@@ -304,11 +304,11 @@ export function SystemIntelligencePage() {
               <table className="w-full border-collapse text-left">
                 <thead>
                   <tr className="hud-label border-b border-ink-200/70">
-                    <th className="py-2.5 pr-3 font-semibold">PID</th>
-                    <th className="py-2.5 pr-3 font-semibold">Name</th>
-                    <th className="py-2.5 pr-3 font-semibold">User</th>
-                    <th className="py-2.5 pr-3 text-right font-semibold">CPU %</th>
-                    <th className="py-2.5 pr-3 text-right font-semibold">MEM %</th>
+                    <th className="py-2.5 pr-3 font-medium">PID</th>
+                    <th className="py-2.5 pr-3 font-medium">Name</th>
+                    <th className="py-2.5 pr-3 font-medium">User</th>
+                    <th className="py-2.5 pr-3 text-right font-medium">CPU %</th>
+                    <th className="py-2.5 pr-3 text-right font-medium">MEM %</th>
                   </tr>
                 </thead>
                 <tbody>

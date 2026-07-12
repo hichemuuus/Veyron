@@ -22,7 +22,7 @@ export function ErrorBox({
   return (
     <div className="panel border-bad-500/30 bg-bad-500/5 p-4">
       <div className="flex items-start gap-3">
-        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bad-500/15 font-mono text-sm font-semibold text-bad-600">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bad-500/15 font-mono text-sm font-medium text-bad-600">
           !
         </span>
         <div className="min-w-0 flex-1">

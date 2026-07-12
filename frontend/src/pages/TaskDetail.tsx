@@ -303,12 +303,12 @@ function StepsTable({ steps, loading }: { steps: ExecutionStep[]; loading: boole
       <table className="w-full border-collapse text-left">
         <thead>
           <tr className="hud-label border-b border-ink-200/70">
-            <th className="py-2.5 pr-3 font-semibold">#</th>
-            <th className="py-2.5 pr-3 font-semibold">Type</th>
-            <th className="py-2.5 pr-3 font-semibold">Name</th>
-            <th className="py-2.5 pr-3 font-semibold">Status</th>
-            <th className="py-2.5 pr-3 text-right font-semibold">Duration</th>
-            <th className="py-2.5 pr-3 font-semibold">Started</th>
+            <th className="py-2.5 pr-3 font-medium">#</th>
+            <th className="py-2.5 pr-3 font-medium">Type</th>
+            <th className="py-2.5 pr-3 font-medium">Name</th>
+            <th className="py-2.5 pr-3 font-medium">Status</th>
+            <th className="py-2.5 pr-3 text-right font-medium">Duration</th>
+            <th className="py-2.5 pr-3 font-medium">Started</th>
           </tr>
         </thead>
         <tbody>

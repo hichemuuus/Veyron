@@ -40,7 +40,7 @@ export function TaskRegistryPage() {
     <div className="mx-auto max-w-6xl px-8 py-8 page-enter">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-display-sm font-semibold text-ink-900">Tasks</h1>
+          <h1 className="font-display text-display-sm font-medium text-ink-900">Tasks</h1>
           <p className="mt-1 text-sm text-ink-500">
             Everything you've asked me to do.
           </p>
@@ -150,7 +150,7 @@ function FilterChip({
       }`}
     >
       <span className="hud-label">{label}</span>
-      <span className={`font-display text-2xl font-semibold tracking-tight ${toneText[tone] ?? 'text-ink-900'}`}>
+      <span className={`font-display text-2xl font-medium tracking-tight ${toneText[tone] ?? 'text-ink-900'}`}>
         {count}
       </span>
     </button>

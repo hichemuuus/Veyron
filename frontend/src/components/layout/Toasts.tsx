@@ -34,7 +34,7 @@ export function Toasts() {
           className={`pointer-events-auto animate-riseIn rounded-xl border bg-white px-3.5 py-2.5 text-xs shadow-card-lg ${TONE[t.tone]}`}
         >
           <div className="flex items-start gap-2.5">
-            <span className={`mt-0.5 font-mono font-semibold ${ICON_TONE[t.tone]}`}>
+            <span className={`mt-0.5 font-mono font-medium ${ICON_TONE[t.tone]}`}>
               {ICON[t.tone]}
             </span>
             <span className="flex-1 leading-relaxed">{t.message}</span>

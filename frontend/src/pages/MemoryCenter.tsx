@@ -118,7 +118,7 @@ export function MemoryCenterPage() {
     <div className="mx-auto max-w-6xl px-8 py-8 page-enter">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-display-sm font-semibold text-ink-900">Memory</h1>
+          <h1 className="font-display text-display-sm font-medium text-ink-900">Memory</h1>
           <p className="mt-1 text-sm text-ink-500">
             What I remember. Browse, search, refine, and prune by importance.
           </p>

@@ -54,7 +54,7 @@ export function ToolCenterPage() {
     <div className="mx-auto max-w-6xl px-8 py-8 page-enter">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-display-sm font-semibold text-ink-900">Tools</h1>
+          <h1 className="font-display text-display-sm font-medium text-ink-900">Tools</h1>
           <p className="mt-1 text-sm text-ink-500">
             Everything I can do — schemas, permission levels, and recent usage.
           </p>
@@ -230,7 +230,7 @@ function ToolDetail({ name, onError }: { name: string; onError: (msg: string) =>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2.5">
-              <h2 className="font-mono text-lg font-semibold text-ink-900">{tool.name}</h2>
+              <h2 className="font-mono text-lg font-medium text-ink-900">{tool.name}</h2>
               <StatusBadge
                 tone={PERMISSION_TONE[tool.permission] ?? 'idle'}
                 label={tool.permission}
@@ -294,11 +294,11 @@ function ToolDetail({ name, onError }: { name: string; onError: (msg: string) =>
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="hud-label border-b border-ink-200/70">
-                  <th className="py-2.5 pr-3 font-semibold">When</th>
-                  <th className="py-2.5 pr-3 font-semibold">Task</th>
-                  <th className="py-2.5 pr-3 font-semibold">Status</th>
-                  <th className="py-2.5 pr-3 text-right font-semibold">Duration</th>
-                  <th className="py-2.5 pr-3 font-semibold">Error</th>
+                  <th className="py-2.5 pr-3 font-medium">When</th>
+                  <th className="py-2.5 pr-3 font-medium">Task</th>
+                  <th className="py-2.5 pr-3 font-medium">Status</th>
+                  <th className="py-2.5 pr-3 text-right font-medium">Duration</th>
+                  <th className="py-2.5 pr-3 font-medium">Error</th>
                 </tr>
               </thead>
               <tbody>

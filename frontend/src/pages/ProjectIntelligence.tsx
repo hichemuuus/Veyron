@@ -77,7 +77,7 @@ export function ProjectIntelligencePage() {
     <div className="mx-auto max-w-6xl px-8 py-8 page-enter">
       <header className="flex items-end justify-between">
         <div>
-          <h1 className="font-display text-display-sm font-semibold text-ink-900">Projects</h1>
+          <h1 className="font-display text-display-sm font-medium text-ink-900">Projects</h1>
           <p className="mt-1 text-sm text-ink-500">
             Point me at a directory and I'll map its stack, structure, and health.
           </p>
@@ -335,7 +335,7 @@ function DependencyGroup({ manager, deps }: { manager: string; deps: string[] })
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between"
       >
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-violet-600">
+        <span className="text-[11px] font-medium uppercase tracking-wide text-violet-600">
           {manager}
         </span>
         <span className="data-mono text-[10px] text-ink-400">

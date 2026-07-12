@@ -49,10 +49,10 @@ function Sidebar() {
             to={n.to}
             end={n.end}
             className={({ isActive }) =>
-              `group flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-all focus-ring ${
+              `group flex items-center gap-3 border-l-2 px-3 py-2 text-sm transition-all focus-ring ${
                 isActive
-                  ? 'bg-sig-50 font-medium text-sig-700 shadow-soft'
-                  : 'text-ink-600 hover:bg-ink-100/70 hover:text-ink-900'
+                  ? 'border-sig bg-surface-2 text-ink-900 font-medium rounded-r-lg'
+                  : 'border-transparent text-ink-600 hover:bg-surface-2 hover:text-ink-900 rounded-lg'
               }`
             }
           >

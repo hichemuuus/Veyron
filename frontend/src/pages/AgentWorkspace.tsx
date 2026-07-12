@@ -90,7 +90,7 @@ export function AgentWorkspacePage() {
     <div className="mx-auto flex h-full max-w-6xl flex-col px-8 py-8 page-enter">
       <header className="mb-5 flex items-end justify-between">
         <div>
-          <h1 className="font-display text-display-sm font-semibold text-ink-900">Agent</h1>
+          <h1 className="font-display text-display-sm font-medium text-ink-900">Agent</h1>
           <p className="mt-1 text-sm text-ink-500">
             Describe what you want done. I'll plan, act, and verify each step.
           </p>

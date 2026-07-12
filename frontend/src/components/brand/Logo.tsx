@@ -5,10 +5,10 @@ export function Logo({ size = 30 }: { size?: number }) {
     <div className="flex items-center gap-2.5">
       <Mark size={size} />
       <div className="leading-none">
-        <div className="font-display text-[1.15rem] font-semibold tracking-[-0.01em] text-ink-900">
-          Paios
+        <div className="text-[1.15rem] font-medium tracking-[-0.01em] text-ink-900">
+          PAiOS
         </div>
-        <div className="hud-label mt-1 text-[9px]">personal ai</div>
+        <div className="hud-label mt-1 text-[9px]">Nocturne · Intelligent Companion</div>
       </div>
     </div>
   )

@@ -91,7 +91,7 @@ function Hero({ loading, active, total }: { loading: boolean; active: number; to
     <div className="flex items-start justify-between gap-6">
       <div className="min-w-0">
         <p className="hud-label text-ink-400">{greeting.eyebrow}</p>
-        <h1 className="mt-2 font-display text-display font-semibold text-ink-900">
+        <h1 className="mt-2 font-display text-display font-medium text-ink-900">
           {greeting.line}
         </h1>
         <p className="mt-3 max-w-lg text-[15px] leading-relaxed text-ink-500">
@@ -100,8 +100,8 @@ function Hero({ loading, active, total }: { loading: boolean; active: number; to
             : active > 0
             ? `You have ${active} task${active === 1 ? '' : 's'} in progress. I'll keep watch and verify each result.`
             : total > 0
-            ? 'Everything is settled. Whenever you're ready, describe a new goal and I'll take it from here.'
-            : 'Nothing here yet. Describe a goal and I'll plan, act, and verify it for you.'}
+            ? `Everything is settled. Whenever you're ready, describe a new goal and I'll take it from here.`
+            : `Nothing here yet. Describe a goal and I'll plan, act, and verify it for you.`}
         </p>
       </div>
       {/* Breathing AI-presence orb — a calm, living focal point. */}
@@ -305,7 +305,7 @@ function Metric({
     <div className="rounded-xl border border-ink-200/70 bg-ink-50/60 p-3">
       <div className="flex items-center justify-between">
         <span className="hud-label">{label}</span>
-        <span className={`font-display text-base font-semibold ${toneCls}`}>{value}</span>
+        <span className={`font-display text-base font-medium ${toneCls}`}>{value}</span>
       </div>
       {sub ? <div className="data-mono mt-0.5 text-[10px] text-ink-400">{sub}</div> : null}
       {children ? <div className="mt-2">{children}</div> : null}
