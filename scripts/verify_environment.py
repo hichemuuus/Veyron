@@ -13,7 +13,6 @@ Usage:
 
 import importlib.metadata
 import sys
-import textwrap
 
 REQUIRED_PACKAGES = {
     "fastapi": "FastAPI",
@@ -69,14 +68,14 @@ def check() -> int:
         errors += 1
 
     if errors:
-        print(textwrap.dedent(f"""
-        ┌────────────────────────────────────────────────────────────┐
-        │  {errors} check(s) FAILED.                                       │
-        │  Ensure you are running from the project virtual           │
-        │  environment and have installed all dependencies:          │
-        │    python -m pip install -r backend/requirements.txt       │
-        └────────────────────────────────────────────────────────────┘
-        """))
+        bar = "=" * 60
+        print(f"""
+{bar}
+  {errors} check(s) FAILED.
+  Ensure you are running from the project virtual
+  environment and have installed all dependencies:
+    python -m pip install -r backend/requirements.txt
+{bar}""")
     else:
         print("\nAll checks passed. Environment is ready.")
 
