@@ -1,5 +1,5 @@
 {
-  "name": "paios",
+  "name": "veyron",
   "version": "1.0.0",
   "description": "**AI Productivity System** — a local-first agent runtime that understands your system, remembers, plans, and acts under strict security controls. Not a chatbot; an AI operating interface.",
   "main": "index.js",
