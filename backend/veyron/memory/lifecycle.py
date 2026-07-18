@@ -16,6 +16,7 @@ from difflib import SequenceMatcher
 
 from veyron.db.base import sync_session_scope
 from veyron.db.models import Memory
+from sqlmodel import select, delete, update, func
 
 logger = logging.getLogger(__name__)
 
@@ -76,8 +77,7 @@ def decay_memories(
     while True:
         with sync_session_scope() as session:
             batch = (
-                session.query(Memory)
-                .filter(Memory.decayed == False)
+                session.exec(select(Memory).where(Memory.decayed == False))
                 .offset(offset)
                 .limit(batch_size)
                 .all()
@@ -106,7 +106,7 @@ def find_duplicates(content: str) -> list[Memory]:
     """Find exact duplicates by content hash."""
     h = content_hash(content)
     with sync_session_scope() as session:
-        return session.query(Memory).filter(Memory.content_hash == h).all()
+        return session.exec(select(Memory).where(Memory.content_hash == h)).all()
 
 
 def has_duplicate(content: str) -> bool:
@@ -119,7 +119,7 @@ def find_similar(content: str, threshold: float = SIMILARITY_THRESHOLD, limit: i
     h = content_hash(content)
     candidates: list[Memory] = []
     with sync_session_scope() as session:
-        all_mems = session.query(Memory).filter(Memory.decayed == False).all()
+        all_mems = session.exec(select(Memory).where(Memory.decayed == False)).all()
     for mem in all_mems:
         if mem.content_hash == h:
             continue
@@ -143,7 +143,7 @@ def merge_memories(
     Combines importance (max of all), tags, and recall counts.
     """
     with sync_session_scope() as session:
-        primary = session.query(Memory).filter(Memory.public_id == primary_id).first()
+        primary = session.exec(select(Memory).where(Memory.public_id == primary_id)).first()
         if not primary:
             logger.warning("merge: primary memory %s not found", primary_id)
             return None
@@ -153,7 +153,7 @@ def merge_memories(
         tags_set = set(t.strip() for t in primary.tags.split(",") if t.strip())
 
         for sec_id in secondary_ids:
-            sec = session.query(Memory).filter(Memory.public_id == sec_id).first()
+            sec = session.exec(select(Memory).where(Memory.public_id == sec_id)).first()
             if not sec:
                 continue
             max_importance = max(max_importance, sec.importance)
@@ -187,8 +187,7 @@ def cleanup_decayed(batch_size: int = CLEANUP_BATCH_SIZE) -> int:
     while True:
         with sync_session_scope() as session:
             batch = (
-                session.query(Memory)
-                .filter(Memory.decayed == True)
+                session.exec(select(Memory).where(Memory.decayed == True))
                 .limit(batch_size)
                 .all()
             )

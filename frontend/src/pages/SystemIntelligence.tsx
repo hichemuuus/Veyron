@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from 'react'
-import { api } from '../api/client'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { useAppStore } from '../stores/appStore'
 import type {
   DiskPartition,
-  SystemCpu,
+  MonitorCpu,
+  MonitorMemory,
   SystemDisk,
   SystemHealth,
-  SystemMemory,
   SystemOverview,
   SystemProcess,
 } from '../api/types'
@@ -22,69 +22,63 @@ import { useInterval } from '../hooks/useInterval'
 import { fmtBytes, fmtPct } from '../lib/format'
 
 const SPARK_SAMPLES = 60
-const POLL_MS = 2000
-const PROC_POLL_MS = 5000
+const PROC_POLL_MS = 1000
 
 type SortBy = 'cpu' | 'memory'
 
 export function SystemIntelligencePage() {
   const [overview, setOverview] = useState<SystemOverview | null>(null)
-  const [cpu, setCpu] = useState<SystemCpu | null>(null)
-  const [mem, setMem] = useState<SystemMemory | null>(null)
+  const [cpu, setCpu] = useState<MonitorCpu | null>(null)
+  const [mem, setMem] = useState<MonitorMemory | null>(null)
   const [disk, setDisk] = useState<SystemDisk | null>(null)
-  const [health, setHealth] = useState<SystemHealth | null>(null)
+  const [health, _setHealth] = useState<SystemHealth | null>(null)
   const [procs, setProcs] = useState<SystemProcess[]>([])
   const [sortBy, setSortBy] = useState<SortBy>('cpu')
   const [cpuHistory, setCpuHistory] = useState<number[]>([])
   const [memHistory, setMemHistory] = useState<number[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
-
-  const pollAll = useCallback(async () => {
-    try {
-      const [ov, c, m, d, h] = await Promise.all([
-        api.systemOverview(),
-        api.systemCpu(),
-        api.systemMemory(),
-        api.systemDisk(),
-        api.systemHealth(),
-      ])
-      setError(null)
-      if (ov.data) {
-        const d = ov.data
-        setOverview(d)
-        setCpuHistory((p) => [...p.slice(-(SPARK_SAMPLES - 1)), d.cpu_percent])
-        setMemHistory((p) => [...p.slice(-(SPARK_SAMPLES - 1)), d.memory_percent])
-      }
-      if (c.data) setCpu(c.data)
-      if (m.data) setMem(m.data)
-      if (d.data) setDisk(d.data)
-      if (h.data) setHealth(h.data)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setLoading(false)
-    }
-  }, [])
+  const sortGenRef = useRef(0)
+  const systemSnapshot = useAppStore((s) => s.systemSnapshot)
 
   const pollProcs = useCallback(async () => {
-    try {
-      const r = await api.systemProcesses(15, sortBy)
-      if (r.data) setProcs(r.data.processes)
-    } catch {
-      // Processes are best-effort.
+    const gen = ++sortGenRef.current
+    const snap = useAppStore.getState().systemSnapshot
+    if (!snap) return
+    const sorted = [...snap.top_processes].sort((a, b) => {
+      return sortBy === 'memory'
+        ? b.memory_percent - a.memory_percent
+        : b.cpu_percent - a.cpu_percent
+    })
+    if (gen === sortGenRef.current) {
+      setProcs(sorted)
     }
   }, [sortBy])
 
   useEffect(() => {
-    pollAll()
-  }, [pollAll])
+    if (!systemSnapshot) return
+    setOverview({
+      cpu_percent: systemSnapshot.cpu.percent,
+      cpu_count: systemSnapshot.cpu.count_logical,
+      memory_total: systemSnapshot.memory.total,
+      memory_used: systemSnapshot.memory.used,
+      memory_percent: systemSnapshot.memory.percent,
+      disk_percent: systemSnapshot.disks?.[0]?.percent ?? 0,
+      boot_time: 0,
+    })
+    setCpu(systemSnapshot.cpu)
+    setMem(systemSnapshot.memory)
+    setDisk({ partitions: systemSnapshot.disks })
+    setCpuHistory((p) => [...p.slice(-(SPARK_SAMPLES - 1)), systemSnapshot.cpu.percent])
+    setMemHistory((p) => [...p.slice(-(SPARK_SAMPLES - 1)), systemSnapshot.memory.percent])
+    setError(null)
+    setLoading(false)
+  }, [systemSnapshot])
 
   useEffect(() => {
     pollProcs()
   }, [pollProcs])
 
-  useInterval(pollAll, POLL_MS)
   useInterval(pollProcs, PROC_POLL_MS)
 
   const healthTone = !health ? 'idle' : health.ok ? 'ok' : 'warn'
@@ -108,7 +102,7 @@ export function SystemIntelligencePage() {
 
       {error ? (
         <div className="mt-5">
-          <ErrorBox message={error} onRetry={pollAll} />
+          <ErrorBox message={error} onRetry={() => setError(null)} />
         </div>
       ) : null}
 
@@ -146,8 +140,8 @@ export function SystemIntelligencePage() {
           <div className="mb-4 flex items-center justify-between">
             <span className="hud-label">Processor</span>
             <span className="data-mono text-[10px] text-ink-400">
-              {cpu ? `${cpu.cores_physical}p / ${cpu.cores_logical}l` : ''}
-              {cpu?.freq_mhz_current ? ` · ${Math.round(cpu.freq_mhz_current)} MHz` : ''}
+              {cpu ? `${cpu.count_physical}p / ${cpu.count_logical}l` : ''}
+              {cpu?.frequency_mhz ? ` · ${Math.round(cpu.frequency_mhz)} MHz` : ''}
             </span>
           </div>
           {overview ? (
@@ -164,7 +158,7 @@ export function SystemIntelligencePage() {
                   {cpu.per_cpu.map((v, i) => (
                     <div
                       key={i}
-                      className="flex flex-col items-center rounded-lg border border-ink-200/70 bg-ink-50/60 px-1 py-1.5"
+                      className="flex flex-col items-center rounded-lg border border-ink-200/70 bg-ink-100/60 px-1 py-1.5"
                     >
                       <span className="font-mono text-[9px] text-ink-400">c{i}</span>
                       <span className={`data-mono text-[10px] mt-0.5 ${v > 85 ? 'text-warn-600' : 'text-ink-600'}`}>
@@ -176,9 +170,9 @@ export function SystemIntelligencePage() {
               ) : null}
               {cpu?.load_avg && cpu.load_avg.length === 3 ? (
                 <div className="mt-4 grid grid-cols-3 gap-2 border-t border-ink-200/70 pt-3">
-                  <LoadAvg label="1 min" value={cpu.load_avg[0]} cores={cpu.cores_logical} />
-                  <LoadAvg label="5 min" value={cpu.load_avg[1]} cores={cpu.cores_logical} />
-                  <LoadAvg label="15 min" value={cpu.load_avg[2]} cores={cpu.cores_logical} />
+                  <LoadAvg label="1 min" value={cpu.load_avg[0]} cores={cpu.count_logical} />
+                  <LoadAvg label="5 min" value={cpu.load_avg[1]} cores={cpu.count_logical} />
+                  <LoadAvg label="15 min" value={cpu.load_avg[2]} cores={cpu.count_logical} />
                 </div>
               ) : null}
             </>
@@ -209,7 +203,7 @@ export function SystemIntelligencePage() {
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-ink-200/70 pt-3">
                 <MemStat label="used" value={fmtBytes(mem.used)} />
                 <MemStat label="available" value={fmtBytes(mem.available)} />
-                <MemStat label="free" value={fmtBytes(mem.free)} />
+                <MemStat label="free" value={fmtBytes(mem.total - mem.used)} />
               </div>
               {mem.swap_total > 0 ? (
                 <div className="mt-4">
@@ -283,13 +277,13 @@ export function SystemIntelligencePage() {
         <div className="panel p-5 lg:col-span-2">
           <div className="mb-4 flex items-center justify-between">
             <span className="hud-label">Top processes</span>
-            <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-white p-0.5">
+            <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-ink-200/40 p-0.5">
               {(['cpu', 'memory'] as SortBy[]).map((s) => (
                 <button
                   key={s}
                   onClick={() => setSortBy(s)}
                   className={`focus-ring rounded-md px-2.5 py-1 text-[11px] font-medium uppercase transition-colors ${
-                    sortBy === s ? 'bg-sig-500/15 text-sig-700' : 'text-ink-500 hover:text-ink-800'
+                    sortBy === s ? 'bg-sig-500/15 text-sig-700' : 'text-ink-500 hover:bg-ink-100/60 hover:text-ink-700'
                   }`}
                 >
                   {s}
@@ -301,7 +295,14 @@ export function SystemIntelligencePage() {
             <EmptyState title="No processes" hint="Process list unavailable." />
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left">
+              <table className="w-full table-fixed border-collapse text-left">
+                <colgroup>
+                  <col className="w-[8ch]" />
+                  <col />
+                  <col className="w-[12ch]" />
+                  <col className="w-[10ch]" />
+                  <col className="w-[10ch]" />
+                </colgroup>
                 <thead>
                   <tr className="hud-label border-b border-ink-200/70">
                     <th className="py-2.5 pr-3 font-medium">PID</th>
@@ -313,9 +314,9 @@ export function SystemIntelligencePage() {
                 </thead>
                 <tbody>
                   {procs.map((p) => (
-                    <tr key={p.pid} className="border-b border-ink-100 text-xs transition-colors hover:bg-ink-50/50">
+                    <tr key={p.pid} className="border-b border-ink-100 text-xs transition-colors hover:bg-ink-100/50">
                       <td className="py-2.5 pr-3 data-mono text-ink-400">{p.pid}</td>
-                      <td className="py-2.5 pr-3 font-mono text-ink-700">{p.name || '?'}</td>
+                      <td className="truncate max-w-[24ch] py-2.5 pr-3 font-mono text-ink-700" title={p.name}>{p.name || '?'}</td>
                       <td className="py-2.5 pr-3 data-mono text-ink-500">{p.username || '—'}</td>
                       <td
                         className={`py-2.5 pr-3 text-right data-mono ${
@@ -376,9 +377,9 @@ function MemStat({ label, value }: { label: string; value: string }) {
 function DiskRow({ part }: { part: DiskPartition }) {
   const warn = part.percent > 90
   return (
-    <div className="rounded-xl border border-ink-200/70 bg-ink-50/50 p-3">
+    <div className="rounded-xl border border-ink-200/70 bg-ink-100/50 p-3">
       <div className="flex items-center justify-between">
-        <span className="font-mono text-xs font-medium text-ink-700">{part.mountpoint}</span>
+        <span className="truncate font-mono text-xs font-medium text-ink-700" title={part.mountpoint}>{part.mountpoint}</span>
         <span
           className={`rounded-full border px-1.5 py-px text-[9px] font-medium uppercase ${
             warn
@@ -393,7 +394,7 @@ function DiskRow({ part }: { part: DiskPartition }) {
         <ProgressMeter percent={part.percent} compact />
       </div>
       <div className="mt-2 flex items-center justify-between font-mono text-[10px] text-ink-400">
-        <span>{part.device}</span>
+        <span className="truncate max-w-[16ch]" title={part.device}>{part.device}</span>
         <span>
           {fmtBytes(part.used)} / {fmtBytes(part.total)} · {fmtBytes(part.free)} free
         </span>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api } from '../api/client'
 import type { DashboardData, RecentTask, SystemOverview, TaskBrief } from '../api/types'
@@ -14,7 +14,7 @@ const REFRESH_MS = 5000
 const SPARK_SAMPLES = 40
 
 export function DashboardPage() {
-  const { data, loading, error, reload } = useAsync<DashboardData>(() => api.dashboard(), [])
+  const { data, loading, reload } = useAsync<DashboardData>(() => api.dashboard(), [])
   // Select the stable briefs map reference from the store (no inline mapping —
   // that would return a new array each call and break Zustand's snapshot cache).
   const briefs = useAppStore((s) => s.taskBriefs)
@@ -35,12 +35,6 @@ export function DashboardPage() {
         active={data?.active_tasks ?? 0}
         total={data?.total_tasks ?? 0}
       />
-      {error ? (
-        <div className="mt-8">
-          <ErrorBox message={error} onRetry={reload} />
-        </div>
-      ) : null}
-
       <section className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
           label="Active"
@@ -74,10 +68,15 @@ export function DashboardPage() {
           <RecentTasks
             loading={loading && !data}
             tasks={recentFromStore}
+            tasksError={data?.recent_tasks_error ?? null}
             onRefresh={reload}
           />
         </div>
-        <SystemPanel system={data?.system} loading={loading && !data} />
+        <SystemPanel
+          system={data?.system}
+          systemError={data?.system_error ?? null}
+          loading={loading && !data}
+        />
       </section>
     </div>
   )
@@ -153,10 +152,12 @@ function successRate(d: DashboardData | null): string {
 function RecentTasks({
   loading,
   tasks,
+  tasksError,
   onRefresh,
 }: {
   loading: boolean
   tasks: TaskBrief[]
+  tasksError: string | null
   onRefresh: () => void
 }) {
   return (
@@ -168,13 +169,15 @@ function RecentTasks({
         </div>
         <button
           onClick={onRefresh}
-          className="focus-ring rounded-lg border border-ink-200 bg-white px-2.5 py-1 text-[11px] font-medium text-ink-500 transition-colors hover:bg-ink-50 hover:text-ink-700"
+          className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-2.5 py-1 text-[11px] font-medium text-ink-400 transition-colors hover:bg-ink-200 hover:text-ink-700"
         >
           ↻ Refresh
         </button>
       </div>
       {loading ? (
         <LoadingSpinner label="Loading tasks" />
+      ) : tasksError ? (
+        <ErrorBox message={tasksError} onRetry={onRefresh} />
       ) : tasks.length === 0 ? (
         <EmptyState
           icon="✦"
@@ -204,28 +207,29 @@ function RecentTasks({
 
 function SystemPanel({
   system,
+  systemError,
   loading,
 }: {
-  system: SystemOverview | undefined
+  system: SystemOverview | null | undefined
+  systemError: string | null
   loading: boolean
 }) {
-  // Maintain rolling samples locally; refresh from /system/overview.
+  // Maintain rolling samples locally; refresh from WebSocket snapshot.
   const [cpu, setCpu] = useState<number[]>([])
   const [mem, setMem] = useState<number[]>([])
 
-  const fetchSample = useCallback(async () => {
-    try {
-      const r = await api.systemOverview()
-      const d = r.data
-      if (!d) return
-      setCpu((p) => [...p.slice(-(SPARK_SAMPLES - 1)), d.cpu_percent])
-      setMem((p) => [...p.slice(-(SPARK_SAMPLES - 1)), d.memory_percent])
-    } catch {
-      // ignore transient polling errors
-    }
-  }, [])
+  const systemSnapshot = useAppStore((s) => s.systemSnapshot)
 
-  // Seed from dashboard system data once, then poll for fresh samples.
+  // Update sparkline data whenever a fresh snapshot arrives via WebSocket.
+  useEffect(() => {
+    if (!systemSnapshot) return
+    const cpuVal = systemSnapshot.cpu.percent
+    const memVal = systemSnapshot.memory.percent
+    setCpu((p) => [...p.slice(-(SPARK_SAMPLES - 1)), cpuVal])
+    setMem((p) => [...p.slice(-(SPARK_SAMPLES - 1)), memVal])
+  }, [systemSnapshot])
+
+  // Seed from dashboard system data if sparkline is still empty.
   useEffect(() => {
     if (system) {
       setCpu((p) => (p.length ? p : [system.cpu_percent]))
@@ -233,9 +237,22 @@ function SystemPanel({
     }
   }, [system])
 
-  useInterval(fetchSample, 2000)
-
-  const s = system
+  // Normalise system data: prefer live WebSocket snapshot, fall back to
+  // dashboard endpoint response for the initial render.
+  const s: SystemOverview | null = useMemo(() => {
+    if (systemSnapshot) {
+      return {
+        cpu_percent: systemSnapshot.cpu.percent,
+        cpu_count: systemSnapshot.cpu.count_logical,
+        memory_total: systemSnapshot.memory.total,
+        memory_used: systemSnapshot.memory.used,
+        memory_percent: systemSnapshot.memory.percent,
+        disk_percent: systemSnapshot.disks?.[0]?.percent ?? 0,
+        boot_time: systemSnapshot.timestamp,
+      }
+    }
+    return system ?? null
+  }, [systemSnapshot, system])
   return (
     <div className="panel flex h-full flex-col p-5">
       <div className="mb-4 flex items-center justify-between">
@@ -244,6 +261,8 @@ function SystemPanel({
       </div>
       {loading && !s ? (
         <LoadingSpinner label="Reading sensors" />
+      ) : systemError ? (
+        <ErrorBox message={systemError} onRetry={undefined} />
       ) : s ? (
         <div className="flex flex-1 flex-col gap-3">
           <Metric
@@ -302,7 +321,7 @@ function Metric({
   const toneCls =
     tone === 'warn' ? 'text-warn-600' : tone === 'fail' ? 'text-bad-600' : 'text-ink-900'
   return (
-    <div className="rounded-xl border border-ink-200/70 bg-ink-50/60 p-3">
+    <div className="rounded-xl border border-ink-200/70 bg-ink-100/60 p-3">
       <div className="flex items-center justify-between">
         <span className="hud-label">{label}</span>
         <span className={`font-display text-base font-medium ${toneCls}`}>{value}</span>
@@ -322,12 +341,12 @@ function MiniStat({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function healthTone(s?: SystemOverview): 'ok' | 'warn' | 'fail' | 'idle' {
+function healthTone(s: SystemOverview | null | undefined): 'ok' | 'warn' | 'fail' | 'idle' {
   if (!s) return 'idle'
   if (s.cpu_percent > 90 || s.memory_percent > 92 || s.disk_percent > 95) return 'warn'
   return 'ok'
 }
-function healthLabel(s?: SystemOverview): string {
+function healthLabel(s: SystemOverview | null | undefined): string {
   if (!s) return 'Unknown'
   return healthTone(s) === 'ok' ? 'Healthy' : 'Stressed'
 }

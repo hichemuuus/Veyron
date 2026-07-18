@@ -27,14 +27,14 @@ export function StatusBadge({
   const pad = size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border font-medium ${ring} ${pad}`}
+      className={`inline-flex max-w-full items-center gap-1.5 rounded-full border font-medium ${ring} ${pad}`}
     >
       <span
-        className={`h-1.5 w-1.5 rounded-full ${dot} ${
+        className={`h-1.5 w-1.5 shrink-0 rounded-full ${dot} ${
           (pulse ?? info.tone === 'active') ? 'animate-pulseDot' : ''
         }`}
       />
-      {info.label}
+      <span className="truncate">{info.label}</span>
     </span>
   )
 }

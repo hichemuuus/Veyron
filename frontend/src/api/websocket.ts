@@ -1,16 +1,23 @@
-import type { WsClientMessage, WsServerMessage } from './types'
+import { useAppStore } from '../stores/appStore'
+import type { SystemSnapshot, WsClientMessage, WsServerMessage } from './types'
 
 export type EventHandler = (msg: WsServerMessage) => void
+
+function wsUrl(): string {
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+  return isTauri ? 'ws://127.0.0.1:8000/ws' : `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+}
 
 export class WebSocketClient {
   private ws: WebSocket | null = null
   private handlers = new Set<EventHandler>()
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  private _unsubMonitor: (() => void) | null = null
   private shouldReconnect = true
   private url: string
 
   constructor(url?: string) {
-    this.url = url || `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`
+    this.url = url || wsUrl()
   }
 
   connect(): void {
@@ -27,6 +34,13 @@ export class WebSocketClient {
 
     this.ws.onopen = () => {
       console.log('WebSocket connected')
+
+      // Register monitor snapshot handler.
+      this._unsubMonitor = this.onEvent((msg) => {
+        if (msg.type === 'monitor.snapshot') {
+          useAppStore.getState().setSystemSnapshot(msg.payload as SystemSnapshot)
+        }
+      })
     }
 
     this.ws.onmessage = (event: MessageEvent) => {
@@ -58,6 +72,11 @@ export class WebSocketClient {
     }
     this.ws?.close()
     this.ws = null
+    this.handlers.clear()
+    if (this._unsubMonitor) {
+      this._unsubMonitor()
+      this._unsubMonitor = null
+    }
   }
 
   send(msg: WsClientMessage): void {

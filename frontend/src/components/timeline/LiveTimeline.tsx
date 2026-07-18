@@ -84,7 +84,7 @@ export function LiveTimeline({
   return (
     <div className="flex flex-col" style={{ maxHeight }}>
       {(live || iterationCount > 0) && (
-        <div className="mb-4 flex items-center justify-between rounded-lg border border-ink-200/70 bg-ink-50/60 px-3 py-1.5">
+        <div className="mb-4 flex items-center justify-between rounded-lg border border-ink-200/70 bg-ink-100/60 px-3 py-1.5">
           <div className="flex items-center gap-2">
             <span
               className={`h-1.5 w-1.5 rounded-full ${

@@ -26,10 +26,10 @@ export function Stat({ label, value, sub, icon, tone = 'default' }: StatProps) {
         <span className="hud-label">{label}</span>
         {icon ? <span className="text-ink-400">{icon}</span> : null}
       </div>
-      <span className={`font-display text-3xl font-medium leading-none tracking-tight ${TONE_TEXT[tone]}`}>
+      <span className={`text-wrap-safe font-display text-3xl font-medium leading-none tracking-tight ${TONE_TEXT[tone]}`}>
         {value}
       </span>
-      {sub ? <span className="text-[11px] text-ink-500">{sub}</span> : null}
+      {sub ? <span className="text-wrap-safe text-[11px] text-ink-500">{sub}</span> : null}
     </div>
   )
 }

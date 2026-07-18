@@ -18,6 +18,7 @@ from veyron.config import DATA_DIR
 from veyron.intelligence.intent.model import IntentModel
 from veyron.intelligence.tool_selector.model import ToolSelectorModel
 from veyron.intelligence.training.benchmark_v2 import BenchmarkReportV2, BenchmarkV2
+from veyron.intelligence.training.dataset import TEST_DATA_PATH, TRAIN_DATA_PATH
 from veyron.intelligence.training.preparation.splitter import load_jsonl_as_examples
 from veyron.intelligence.training.trainer_v2 import TrainingPipelineV2
 
@@ -57,43 +58,50 @@ def load_v2_models() -> tuple[IntentModel, ToolSelectorModel]:
 
 
 def run_benchmark(dataset_path: str | Path | None = None) -> BenchmarkReportV2:
-    """Run the full v2 benchmark.
+    """Run the full v2 benchmark on a strict holdout set.
 
-    Trains fresh v1 models from the dataset for comparison, then runs
-    the benchmark comparing v2 (loaded from disk) vs v1 vs heuristic.
+    Performs a stratified 80/20 holdout split, trains v1 models on the
+    training fold, and evaluates all models (v2 + v1 + heuristic) on
+    the test fold only.
 
     Args:
-        dataset_path: Path to the JSONL dataset. Defaults to synthetic data.
+        dataset_path: Path to the full JSONL dataset. Defaults to synthetic data.
 
     Returns:
         A BenchmarkReportV2 with all measurements.
     """
-    data_path = Path(dataset_path) if dataset_path else SYNTHETIC_DATA_PATH
-    if not data_path.is_file():
-        raise FileNotFoundError(f"Dataset not found at {data_path}")
+    from veyron.intelligence.training.dataset import prepare_holdout_split
 
-    logger.info("Loading dataset from %s", data_path)
-    dataset = load_jsonl_as_examples(str(data_path))
-    logger.info("Loaded %d examples", len(dataset))
+    logger.info("Preparing holdout split (80/20 stratified) ...")
+    train_path, test_path = prepare_holdout_split(dataset_path)
+
+    logger.info("Loading holdout test set from %s", test_path)
+    logger.info("Evaluating on holdout set: %s", test_path.name)
+    test_dataset = load_jsonl_as_examples(str(test_path))
+    logger.info("Loaded %d test examples", len(test_dataset))
+
+    logger.info("Loading holdout train set from %s", train_path)
+    train_dataset = load_jsonl_as_examples(str(train_path))
+    logger.info("Loaded %d train examples", len(train_dataset))
 
     # Load v2 models from disk.
     logger.info("Loading v2 models from %s", MODELS_DIR)
     v2_intent, v2_ts = load_v2_models()
 
-    # Train v1 models from this dataset for comparison.
-    logger.info("Training v1 models for baseline comparison ...")
+    # Train v1 models on training fold only (no test leakage).
+    logger.info("Training v1 models on training fold ...")
     pipeline = TrainingPipelineV2()
-    v1_intent, _ = pipeline.train_intent(dataset, seed=42)
+    v1_intent, _ = pipeline.train_intent(train_dataset, seed=42)
     v1_ts_model = ToolSelectorModel()
-    train_texts = [ex.request for ex in dataset.examples if ex.request]
-    train_targets = [ex.tools_used for ex in dataset.examples if ex.request]
+    train_texts = [ex.request for ex in train_dataset.examples if ex.request]
+    train_targets = [ex.tools_used for ex in train_dataset.examples if ex.request]
     v1_ts_model.fit(train_texts, train_targets)
 
-    # Run benchmark.
-    logger.info("Running v2 benchmark ...")
+    # Run benchmark against the holdout test set only.
+    logger.info("Running v2 benchmark on holdout test set ...")
     benchmark = BenchmarkV2()
     report = benchmark.run(
-        dataset=dataset,
+        dataset=test_dataset,
         v2_intent_model=v2_intent,
         v1_intent_model=v1_intent,
         v2_ts_model=v2_ts,

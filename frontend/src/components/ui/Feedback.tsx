@@ -34,7 +34,7 @@ export function ErrorBox({
         {onRetry ? (
           <button
             onClick={onRetry}
-            className="focus-ring shrink-0 rounded-lg border border-bad-500/40 bg-white px-2.5 py-1 text-[11px] font-medium text-bad-600 transition-colors hover:bg-bad-500/10"
+            className="focus-ring shrink-0 rounded-lg border border-bad-500/40 bg-ink-100 px-2.5 py-1 text-[11px] font-medium text-bad-500 transition-colors hover:bg-bad-500/10"
           >
             Retry
           </button>
@@ -82,13 +82,13 @@ export function Button({
 }) {
   const variants: Record<string, string> = {
     default:
-      'border-ink-200 bg-white text-ink-700 hover:bg-ink-50 hover:border-ink-300 shadow-soft',
+      'border-ink-200/60 bg-ink-100 text-ink-600 hover:bg-ink-200 hover:text-ink-800',
     primary:
-      'border-sig-500 bg-sig-500 text-white hover:bg-sig-600 hover:border-sig-600 shadow-soft',
-    ghost: 'border-transparent text-ink-500 hover:bg-ink-100 hover:text-ink-800',
+      'border-sig-600/60 bg-sig-500/90 text-white hover:bg-sig-600 shadow-soft',
+    ghost: 'border-transparent text-ink-500 hover:bg-ink-100/80 hover:text-ink-700',
     danger:
-      'border-bad-500/40 bg-white text-bad-600 hover:bg-bad-500/10',
-    warn: 'border-warn-500/40 bg-white text-warn-600 hover:bg-warn-500/10',
+      'border-bad-500/30 bg-ink-100 text-bad-500 hover:bg-bad-500/10',
+    warn: 'border-warn-500/30 bg-ink-100 text-warn-500 hover:bg-warn-500/10',
   }
   const sizes: Record<string, string> = {
     sm: 'px-2.5 py-1.5 text-[11px]',

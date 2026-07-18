@@ -17,7 +17,7 @@ export function TaskRow({ task, showProgress = true }: TaskRowProps) {
   return (
     <Link
       to={`/agent/${task.public_id}`}
-      className="focus-ring group block rounded-xl border border-ink-200/70 bg-white p-3.5 transition-all hover:-translate-y-0.5 hover:border-sig-500/30 hover:shadow-card"
+      className="focus-ring group block rounded-xl border border-ink-200/70 bg-ink-100 p-3.5 transition-all hover:-translate-y-0.5 hover:border-sig-500/30 hover:shadow-card"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">

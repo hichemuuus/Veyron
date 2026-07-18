@@ -547,3 +547,138 @@ class TestVerifierResult:
         )
         plan.error = "step s1 failed"
         assert planner._should_replan(plan) is False
+
+
+class TestStepRepair:
+    """Tests for inline step repair (<3 failures) vs. full replan (3+)."""
+
+    @pytest.mark.asyncio
+    async def test_repair_replaces_single_failed_step(self, stub_provider, fresh_db):
+        """A single step failure should trigger _repair_step, not _adaptive_replan.
+
+        The plan has 3 linear steps (1←2←3). Step 2 is forced to fail twice
+        (max_retries=1). After failure the planner calls _repair_step for a
+        single replacement, injects it into the DAG, and resumes execution.
+        """
+        responses = [
+            # 0: Plan generation → 3 steps (linear: 1←2←3)
+            json.dumps([
+                {"id": "step_1", "goal": "Check CPU", "tool": "system_monitor"},
+                {"id": "step_2", "goal": "List files", "tool": "filesystem_read", "depends_on": ["step_1"]},
+                {"id": "step_3", "goal": "Analyze results", "depends_on": ["step_2"]},
+            ]),
+            # 1: Step 1 _run_step
+            "CPU: 25%, RAM: 60%",
+            # 2: Step 1 _verify → PASS
+            json.dumps({"status": "PASS", "confidence": 0.95, "issues": [], "evidence": "ok", "action": "COMPLETE"}),
+            # 3: Step 2 _run_step (fails)
+            "Error: file not found",
+            # 4: Step 2 _verify → FAIL + RETRY (triggers retry, not early exit)
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["no files"], "evidence": "empty", "action": "RETRY"}),
+            # 5: Step 2 _run_step retry (still fails)
+            "Error: permission denied",
+            # 6: Step 2 _verify retry → FAIL + RETRY
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["permission"], "evidence": "denied", "action": "RETRY"}),
+            # 7: _repair_step → single replacement step
+            json.dumps({"id": "repair_1", "goal": "List files with terminal", "tool": "terminal"}),
+            # 8: Repair _run_step
+            "hello.txt  world.py",
+            # 9: Repair _verify → PASS
+            json.dumps({"status": "PASS", "confidence": 0.9, "issues": [], "evidence": "files found", "action": "COMPLETE"}),
+            # 10: Step 3 _run_step
+            "Found 2 small files",
+            # 11: Step 3 _verify → PASS
+            json.dumps({"status": "PASS", "confidence": 0.95, "issues": [], "evidence": "analysis ok", "action": "COMPLETE"}),
+            # 12: Synthesis
+            "System is healthy.",
+        ]
+
+        provider = stub_provider(responses=responses)
+        planner = Planner(provider=provider, max_retries=1)
+
+        plan = await planner.plan_and_execute("Analyze my system")
+
+        # Repair succeeded without full replan
+        assert plan.error is None, f"expected no error, got: {plan.error}"
+        assert plan.synthesis is not None
+
+        # Original 3 steps + 1 repair injection = 4 steps in the plan
+        assert len(plan.steps) == 4, f"expected 4 steps, got {len(plan.steps)}"
+
+        # Verify the repair step was injected
+        repair_goals = [s.goal for s in plan.steps if s.id == "repair_1"]
+        assert len(repair_goals) == 1
+        assert "terminal" in repair_goals[0]
+
+        # The downstream step that depended on the failed step (step_3) must
+        # have completed (its deps were updated to point to repair_1)
+        step_3 = next(s for s in plan.steps if s.id == "step_3")
+        assert step_3.status == "completed", f"step_3 status: {step_3.status}"
+
+        # Verify only 13 LLM calls were made (repair path).
+        # Full replan would need 15+ calls (extra plan + re-execute all steps).
+        assert provider.calls == 13, f"expected 13 LLM calls, got {provider.calls}"
+
+    @pytest.mark.asyncio
+    async def test_full_replan_on_three_failures(self, stub_provider, fresh_db):
+        """3+ step failures should fall back to _adaptive_replan (full replan).
+
+        Uses sequential dependencies (1←2←3) for deterministic LLM call order.
+        """
+        responses = [
+            # 0: Plan generation → 3 sequential steps (1←2←3)
+            json.dumps([
+                {"id": "s1", "goal": "Step A", "tool": "system_monitor"},
+                {"id": "s2", "goal": "Step B", "tool": "filesystem_read", "depends_on": ["s1"]},
+                {"id": "s3", "goal": "Step C", "tool": "terminal", "depends_on": ["s2"]},
+            ]),
+            # s1 run
+            "error a1",
+            # s1 verify → RETRY
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["x"], "evidence": "x", "action": "RETRY"}),
+            # s1 run retry
+            "error a2",
+            # s1 verify retry → RETRY (still fails)
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["x"], "evidence": "x", "action": "RETRY"}),
+            # → s1 fails (failure_count=1)
+            # → repair s1 → response:
+            json.dumps({"id": "repair_s1", "goal": "Retry A", "tool": "system_monitor"}),
+            # repair_s1 run
+            "error a3",
+            # repair_s1 verify → RETRY
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["x"], "evidence": "x", "action": "RETRY"}),
+            # repair_s1 run retry
+            "error a4",
+            # repair_s1 verify retry → RETRY (still fails, failure_count=2)
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["x"], "evidence": "x", "action": "RETRY"}),
+            # → repair s1 again → response:
+            json.dumps({"id": "repair_s1b", "goal": "Retry A again", "tool": "system_monitor"}),
+            # repair_s1b run
+            "error a5",
+            # repair_s1b verify → RETRY
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["x"], "evidence": "x", "action": "RETRY"}),
+            # repair_s1b run retry
+            "error a6",
+            # repair_s1b verify retry → RETRY (still fails, failure_count=3 → full replan)
+            json.dumps({"status": "FAIL", "confidence": 0.2, "issues": ["x"], "evidence": "x", "action": "RETRY"}),
+            # → _adaptive_replan → new plan
+            json.dumps([
+                {"id": "alt_1", "goal": "Alternative approach", "tool": "system_monitor"},
+            ]),
+            # alt_1 run
+            "alt result",
+            # alt_1 verify → PASS
+            json.dumps({"status": "PASS", "confidence": 0.9, "issues": [], "evidence": "ok", "action": "COMPLETE"}),
+            # Synthesis
+            "Replanned successfully.",
+        ]
+
+        provider = stub_provider(responses=responses)
+        planner = Planner(provider=provider, max_retries=1)
+
+        plan = await planner.plan_and_execute("Do three things")
+
+        assert plan.error is None, f"expected no error after replan, got: {plan.error}"
+        assert plan.synthesis is not None
+        assert len(plan.steps) > 0
+        assert any(s.status == "completed" for s in plan.steps)

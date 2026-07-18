@@ -12,6 +12,7 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "Veyron AI",
         "width": 1200,
         "height": 800,
@@ -23,7 +24,8 @@
     ],
     "security": {
       "csp": null
-    }
+    },
+    "withGlobalTauri": true
   },
   "bundle": {
     "active": true,
@@ -36,17 +38,21 @@
     ],
     "windows": {
       "nsis": {
-        "installMode": "currentUser"
+        "installMode": "currentUser",
+        "installerIcon": "icons/icon.ico"
       }
     },
-    "externalBin": []
+    "resources": [
+      "binaries/veyron-backend-x86_64-pc-windows-msvc.exe"
+    ]
   },
   "plugins": {
     "updater": {
-      "pubkey": "",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZFQzZENjNFNjRDMjNGRTYKUldUbVA4SmtQdGJHYnVyWXY2ckR1aVBEaFVmNG5WeWl6eEh6NFFmRG5TOTRNU3Q1RWsramd3eVAK",
       "endpoints": [
-        "https://releases.veyron.ai/api/updates/{{target}}-{{arch}}/{{current_version}}"
-      ]
+        "https://github.com/hichemuuus/Veyron/releases/latest/download/latest.json"
+      ],
+      "dangerousInsecureTransportProtocol": false
     }
   }
 }

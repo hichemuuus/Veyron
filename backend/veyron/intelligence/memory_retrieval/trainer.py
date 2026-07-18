@@ -2,8 +2,7 @@
 
 Fits the TF-IDF ranker on a corpus of memory texts, evaluates rank quality on a
 held-out split (precision@k, recall@k, MRR), and persists the model + a JSON
-report. Mirrors ``train_parameter_extraction`` so it slots into the same
-training/benchmark workflow.
+report.
 """
 
 from __future__ import annotations

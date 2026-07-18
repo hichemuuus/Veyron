@@ -32,13 +32,13 @@ export class ErrorBoundary extends Component<Props, State> {
     const { error } = this.state
     if (!error) return this.props.children
     return (
-      <div className="flex h-screen items-center justify-center bg-paper p-6">
+      <div className="flex h-screen items-center justify-center bg-ink-50 p-6">
         <div className="panel w-full max-w-md p-7">
           <div className="hud-label text-bad-600">Something went wrong</div>
           <h2 className="mt-2 font-display text-xl font-medium text-ink-900">
             The interface hit an unexpected error
           </h2>
-          <pre className="mt-4 max-h-48 overflow-auto rounded-lg border border-ink-200 bg-ink-50 p-3 font-mono text-[11px] text-bad-600">
+          <pre className="mt-4 max-h-48 overflow-auto rounded-lg border border-ink-200 bg-ink-100 p-3 font-mono text-[11px] text-bad-600">
             {error.message}
           </pre>
           <div className="mt-5 flex justify-end gap-2">
@@ -50,7 +50,7 @@ export class ErrorBoundary extends Component<Props, State> {
             </button>
             <button
               onClick={() => window.location.reload()}
-              className="focus-ring rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-xs font-medium text-ink-600 hover:bg-ink-50"
+              className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-3.5 py-2 text-xs font-medium text-ink-600 hover:bg-ink-200"
             >
               Reload
             </button>

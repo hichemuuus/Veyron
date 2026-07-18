@@ -6,7 +6,6 @@ import {
   EmptyState,
   Button,
 } from '../components/ui'
-import { Stat } from '../components/ui/Stat'
 import { StatusBadge } from '../components/ui/StatusBadge'
 import { fmtBytes } from '../lib/format'
 
@@ -75,19 +74,32 @@ export function ProjectIntelligencePage() {
 
   return (
     <div className="mx-auto max-w-6xl px-8 py-8 page-enter">
+      {/* Breadcrumb-style header — show path when scanned */}
       <header className="flex items-end justify-between">
-        <div>
-          <h1 className="font-display text-display-sm font-medium text-ink-900">Projects</h1>
-          <p className="mt-1 text-sm text-ink-500">
-            Point me at a directory and I'll map its stack, structure, and health.
-          </p>
+        <div className="min-w-0">
+          {analysis ? (
+            <div className="flex items-center gap-2 truncate">
+              <span className="hud-label text-ink-500">Project</span>
+              <span className="font-mono text-[11px] text-ink-600">/</span>
+              <span className="truncate font-mono text-sm font-medium text-ink-900">
+                {analysis.root}
+              </span>
+            </div>
+          ) : (
+            <>
+              <h1 className="font-display text-display-sm font-medium text-ink-900">Projects</h1>
+              <p className="mt-1 text-sm text-ink-500">
+                Point me at a directory and I'll map its stack, structure, and health.
+              </p>
+            </>
+          )}
         </div>
       </header>
 
       {/* Scan form */}
       <section className="panel mt-6 p-5">
         <div className="mb-3 flex items-center justify-between">
-          <span className="hud-label">Project path</span>
+          <span className="text-[12px] font-medium uppercase tracking-[0.12em] text-ink-800">Project path</span>
           <span className="font-mono text-[10px] text-ink-400">
             sandbox-validated · ⌘↵ to scan
           </span>
@@ -98,9 +110,9 @@ export function ProjectIntelligencePage() {
             onChange={(e) => setPath(e.target.value)}
             onKeyDown={onKeyDown}
             placeholder="/path/to/project (within sandbox roots)"
-            className="focus-ring h-11 flex-1 rounded-lg border border-ink-200 bg-ink-50/50 px-3.5 font-mono text-sm text-ink-900 placeholder:text-ink-400"
+            className="focus-ring h-11 flex-1 rounded-lg border border-ink-200 bg-ink-100/50 px-3.5 font-mono text-sm text-ink-900 placeholder:text-ink-400"
           />
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 rounded-lg border border-ink-200/70 bg-ink-100/30 px-3 py-2">
             <label className="flex items-center gap-1.5 text-[11px] font-medium text-ink-500">
               depth
               <input
@@ -109,9 +121,10 @@ export function ProjectIntelligencePage() {
                 max={20}
                 value={maxDepth}
                 onChange={(e) => setMaxDepth(Math.max(1, Math.min(20, Number(e.target.value) || 1)))}
-                className="focus-ring w-14 rounded-lg border border-ink-200 bg-ink-50/50 px-2 py-1.5 text-center text-xs text-ink-800"
+                className="focus-ring w-14 rounded-lg border border-ink-200 bg-ink-100/50 px-2 py-1.5 text-center text-xs text-ink-800"
               />
             </label>
+            <span className="h-4 w-px bg-ink-200/60" />
             <label className="flex items-center gap-1.5 text-[11px] font-medium text-ink-500">
               <input
                 type="checkbox"
@@ -121,6 +134,7 @@ export function ProjectIntelligencePage() {
               />
               hidden
             </label>
+            <span className="h-4 w-px bg-ink-200/60" />
             <Button
               variant="primary"
               onClick={analyze}
@@ -173,37 +187,53 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
   return (
     <div className="mt-6 flex flex-col gap-5">
       {/* Summary stats */}
-      <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat
-          label="Files"
-          value={analysis.file_count.toLocaleString()}
-          tone="default"
-          sub={fmtBytes(analysis.total_size_bytes)}
-        />
-        <Stat
-          label="Technologies"
-          value={analysis.technologies.length}
-          tone="active"
-          sub="detected"
-        />
-        <Stat
-          label="Issues"
-          value={analysis.issues.length}
-          tone={analysis.issues.length > 0 ? 'warn' : 'ok'}
-          sub={`${analysis.issues.filter((i) => i.severity === 'high').length} high`}
-        />
-        <Stat
-          label="Suggestions"
-          value={analysis.recommendations.length}
-          tone="default"
-        />
+      <section className="grid grid-cols-1 gap-3 md:grid-cols-5">
+        {/* Issues — prominent, accent-colored */}
+        <div className="panel relative overflow-hidden border-l-2 transition-shadow hover:shadow-card-lg md:col-span-2"
+          style={{
+            borderLeftColor: analysis.issues.filter((i) => i.severity === 'high').length > 0
+              ? 'var(--status-warning)' : 'var(--status-online)'
+          }}
+        >
+          <span className="hud-label">Issues</span>
+          <span className="mt-2 block font-display text-4xl font-medium leading-none tracking-tight text-warn-500">
+            {analysis.issues.length}
+          </span>
+          {analysis.issues.length > 0 ? (
+            <span className="mt-1.5 block text-[11px] text-ink-500">
+              {analysis.issues.filter((i) => i.severity === 'high').length} high
+            </span>
+          ) : null}
+        </div>
+
+        {/* Secondary stats — smaller, lower-weight */}
+        <div className="grid grid-cols-3 gap-3 md:col-span-3">
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-3 transition-shadow hover:shadow-card-lg">
+            <span className="hud-label">Files</span>
+            <span className="mt-1.5 block font-display text-xl font-medium leading-none tracking-tight text-ink-800">
+              {analysis.file_count.toLocaleString()}
+            </span>
+          </div>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-3 transition-shadow hover:shadow-card-lg">
+            <span className="hud-label">Technologies</span>
+            <span className="mt-1.5 block font-display text-xl font-medium leading-none tracking-tight text-ink-800">
+              {analysis.technologies.length}
+            </span>
+          </div>
+          <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] p-3 transition-shadow hover:shadow-card-lg">
+            <span className="hud-label">Suggestions</span>
+            <span className="mt-1.5 block font-display text-xl font-medium leading-none tracking-tight text-ink-800">
+              {analysis.recommendations.length}
+            </span>
+          </div>
+        </div>
       </section>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {/* Technologies */}
         <div className="panel p-5">
           <div className="mb-4 flex items-center justify-between">
-            <span className="hud-label">Detected stack</span>
+            <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-900">Detected stack</span>
             <span className="data-mono text-[10px] text-ink-400">
               {analysis.technologies.length} tech
             </span>
@@ -214,10 +244,10 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
             </p>
           ) : (
             <div className="flex flex-col gap-2.5">
-              {analysis.technologies.map((tech) => (
+              {analysis.technologies.map((tech, idx) => (
                 <div
                   key={tech.name}
-                  className="rounded-xl border border-ink-200/70 bg-ink-50/50 p-3"
+                  className="rounded-xl border border-ink-200/70 bg-ink-100/50 p-3"
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-sm font-medium text-sig-700">
@@ -227,9 +257,9 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
                       {(tech.confidence * 100).toFixed(0)}%
                     </span>
                   </div>
-                  <div className="mt-2 h-1 w-full overflow-hidden rounded-full bg-ink-200">
+                  <div className="mt-1.5 h-0.5 w-full overflow-hidden rounded-full bg-ink-200">
                     <div
-                      className="h-full bg-gradient-to-r from-sig-500 to-sig-400"
+                      className={`h-full rounded-full ${idx < 2 ? 'bg-sig-500' : 'bg-ink-400'}`}
                       style={{ width: `${Math.max(4, tech.confidence * 100)}%` }}
                     />
                   </div>
@@ -247,7 +277,7 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
         {/* Dependencies */}
         <div className="panel p-5">
           <div className="mb-4 flex items-center justify-between">
-            <span className="hud-label">Dependencies</span>
+            <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-900">Dependencies</span>
             <span className="data-mono text-[10px] text-ink-400">
               {Object.keys(analysis.dependencies).length} manager(s)
             </span>
@@ -268,7 +298,7 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
         {/* Issues */}
         <div className="panel p-5">
           <div className="mb-4 flex items-center justify-between">
-            <span className="hud-label">Issues found</span>
+            <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-900">Issues found</span>
             <span className="data-mono text-[10px] text-ink-400">
               {analysis.issues.length} total
             </span>
@@ -287,7 +317,7 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
         {/* Recommendations */}
         <div className="panel p-5">
           <div className="mb-4 flex items-center justify-between">
-            <span className="hud-label">Suggestions</span>
+            <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-900">Suggestions</span>
             <span className="data-mono text-[10px] text-ink-400">
               {analysis.recommendations.length} tip{analysis.recommendations.length === 1 ? '' : 's'}
             </span>
@@ -299,7 +329,7 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
               {analysis.recommendations.map((rec, i) => (
                 <li
                   key={i}
-                  className="flex gap-2.5 rounded-xl border border-ink-200/70 bg-ink-50/50 p-3 text-xs leading-relaxed text-ink-700"
+                  className="flex gap-2.5 rounded-xl border border-ink-200/70 bg-ink-100/50 p-3 text-xs leading-relaxed text-ink-700"
                 >
                   <span className="text-sig-500">→</span>
                   <span>{rec}</span>
@@ -313,7 +343,7 @@ function AnalysisResult({ analysis }: { analysis: ProjectAnalysis }) {
       {/* Structure tree */}
       <div className="panel p-5">
         <div className="mb-4 flex items-center justify-between">
-          <span className="hud-label">Project structure</span>
+          <span className="text-[12px] font-semibold uppercase tracking-[0.12em] text-ink-900">Project structure</span>
           <span className="data-mono text-[10px] text-ink-400">
             root: {analysis.root}
           </span>
@@ -330,7 +360,7 @@ function DependencyGroup({ manager, deps }: { manager: string; deps: string[] })
   const [expanded, setExpanded] = useState(false)
   const visible = expanded ? deps : deps.slice(0, 8)
   return (
-    <div className="rounded-xl border border-ink-200/70 bg-ink-50/50 p-3">
+    <div className="rounded-xl border border-ink-200/70 bg-ink-100/50 p-3">
       <button
         onClick={() => setExpanded((v) => !v)}
         className="flex w-full items-center justify-between"
@@ -342,11 +372,11 @@ function DependencyGroup({ manager, deps }: { manager: string; deps: string[] })
           {deps.length} pkg{deps.length === 1 ? '' : 's'} {expanded ? '▾' : '▸'}
         </span>
       </button>
-      <div className="mt-2.5 flex flex-wrap gap-1">
+      <div className={`mt-2.5 flex flex-wrap gap-1 ${!expanded ? 'max-h-[108px] overflow-hidden' : ''}`}>
         {visible.map((d) => (
           <span
             key={d}
-            className="rounded-md border border-ink-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-ink-600"
+            className="rounded-md border border-ink-200 bg-ink-100 px-1.5 py-0.5 font-mono text-[10px] text-ink-600"
           >
             {d}
           </span>
@@ -368,7 +398,7 @@ function IssueRow({ issue }: { issue: ProjectIssue }) {
   const tone = SEVERITY_TONE[issue.severity] ?? 'idle'
   const glyph = SEVERITY_GLYPH[issue.severity] ?? '·'
   return (
-    <div className="flex items-start gap-3 rounded-xl border border-ink-200/70 bg-ink-50/50 p-3">
+    <div className="flex items-start gap-3 rounded-xl border border-ink-200/70 bg-ink-100/50 p-3">
       <span
         className={`mt-px flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-mono text-[11px] font-medium ${
           tone === 'fail'
@@ -387,7 +417,7 @@ function IssueRow({ issue }: { issue: ProjectIssue }) {
           </span>
           <StatusBadge tone={tone} label={issue.severity} />
         </div>
-        <p className="mt-1 text-xs leading-relaxed text-ink-700">{issue.message}</p>
+        <p className="text-wrap-safe mt-1 text-xs leading-relaxed text-ink-700">{issue.message}</p>
       </div>
     </div>
   )
@@ -410,7 +440,7 @@ function TreeView({ node, depth }: { node: ProjectTreeNode; depth: number }) {
         ) : (
           <span className="text-ink-300">·</span>
         )}
-        <span className={isDir ? 'font-medium text-sig-700' : 'text-ink-600'}>{node.name}</span>
+        <span className={`truncate ${isDir ? 'font-medium text-sig-700' : 'text-ink-600'}`}>{node.name}</span>
         {!isDir && typeof node.size === 'number' ? (
           <span className="text-[10px] text-ink-400">{fmtBytes(node.size)}</span>
         ) : null}

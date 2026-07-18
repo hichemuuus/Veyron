@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import subprocess
 import sys
 from typing import Any, ClassVar
 
@@ -104,21 +105,31 @@ class TerminalTool(Tool):
         shell_args = ["cmd.exe", "/c", command] if is_windows else ["/bin/sh", "-c", command]
 
         env = dict(os.environ)
-        # Remove potentially sensitive environment variables.
-        for sensitive_key in ("API_KEY", "API_SECRET", "ACCESS_KEY", "SECRET_KEY",
-                              "TOKEN", "PASSWORD", "PASS", "SECRET", "PRIVATE_KEY",
-                              "AUTH_TOKEN", "AWS_SECRET_ACCESS_KEY"):
-            env.pop(sensitive_key, None)
-            env.pop(sensitive_key.lower(), None)
-            env.pop(sensitive_key.upper(), None)
+        # Remove potentially sensitive environment variables using pattern matching.
+        # This covers more variations than a hardcoded list.
+        import re as _re
+        _sensitive_pattern = _re.compile(
+            r"(?i)(token|secret|password|passwd|pass|api[_-]?key|auth[_-]?key|"
+            r"access[_-]?key|secret[_-]?key|private[_-]?key|"
+            r"aws[_-]?secret[_-]?access[_-]?key|connection[_-]?string|"
+            r"certificate|credential|session[_-]?secret|"
+            r"db[_-]?password|database[_-]?url|redis[_-]?url)"
+        )
+        for key in list(env):
+            if _sensitive_pattern.search(key):
+                env.pop(key, None)
         try:
             cwd_path = cwd if cwd else None
+            kwargs: dict[str, Any] = {}
+            if sys.platform.startswith("win"):
+                kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
             proc = await asyncio.create_subprocess_exec(
                 *shell_args,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
                 cwd=cwd_path,
                 env=env,
+                **kwargs,
             )
         except (OSError, FileNotFoundError) as e:
             return ToolResult(ok=False, error=f"failed to start: {e}")

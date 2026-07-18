@@ -56,26 +56,32 @@ def reset_singletons():
     from veyron.core.agent import reset_agent
     from veyron.core.events import reset_bus
     from veyron.core.task_manager import reset_task_manager
-    from veyron.db.base import reset_sync_engine
+    from veyron.db.base import reset_async_engine, reset_sync_engine
     from veyron.llm.base import reset_provider
+    from veyron.monitor.service import disable_monitor, reset_monitor
     from veyron.security.confirmations import reset_manager
     from veyron.tools.registry import reset_registry
 
     reset_sync_engine()
+    reset_async_engine()
     reset_registry()
     reset_bus()
     reset_manager()
     reset_provider()
     reset_agent()
     reset_task_manager()
+    reset_monitor()
+    disable_monitor()
     yield
     reset_sync_engine()
+    reset_async_engine()
     reset_registry()
     reset_bus()
     reset_manager()
     reset_provider()
     reset_agent()
     reset_task_manager()
+    reset_monitor()
 
 
 @pytest.fixture

@@ -61,7 +61,7 @@ function ConfirmationDialog({
           </span>
         </div>
 
-        <h3 className="mt-4 font-display text-lg font-medium text-ink-900">{conf.summary}</h3>
+        <h3 className="text-wrap-safe mt-4 font-display text-lg font-medium text-ink-900">{conf.summary}</h3>
 
         <dl className="mt-4 space-y-1.5 text-sm">
           <div className="flex justify-between gap-3">
@@ -75,7 +75,7 @@ function ConfirmationDialog({
         </dl>
 
         {Object.keys(conf.inputs).length > 0 ? (
-          <pre className="mt-4 max-h-40 overflow-auto rounded-lg border border-ink-200 bg-ink-50 p-2.5 font-mono text-[11px] text-ink-600">
+          <pre className="mt-4 max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink-200 bg-ink-100 p-2.5 font-mono text-[11px] text-ink-600">
             {JSON.stringify(conf.inputs, null, 2)}
           </pre>
         ) : null}
@@ -87,7 +87,7 @@ function ConfirmationDialog({
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               placeholder="Why is this action authorized?"
-              className="focus-ring mt-1.5 w-full rounded-lg border border-ink-200 bg-white px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400"
+              className="focus-ring mt-1.5 w-full rounded-lg border border-ink-200 bg-ink-100 px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400"
             />
           </div>
         ) : null}

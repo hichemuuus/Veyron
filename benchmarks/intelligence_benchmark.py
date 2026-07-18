@@ -1,7 +1,6 @@
 """Phase 11.5 Intelligence Evaluation — unified, reproducible benchmark.
 
 Compares micro-model pipeline vs heuristic baseline across:
-  - Parameter extraction accuracy
   - Tool selection precision/recall
   - Intent classification accuracy
   - Task success rate (when LLM available)
@@ -25,8 +24,6 @@ from typing import Any
 
 from veyron.config import DATA_DIR
 from veyron.intelligence.intent.inference import ClassifierResult, classify_intent, reset_model
-from veyron.intelligence.parameter_extraction.evaluation import ParameterExtractionEvaluator
-from veyron.intelligence.parameter_extraction.model import ParameterExtractionModel
 from veyron.intelligence.tool_selector.model import ToolSelectorModel
 from veyron.llm.micro.router import route
 
@@ -55,7 +52,6 @@ class ModeReport:
 
     mode: str  # "micro_model" | "baseline"
     timestamp: str = ""
-    param_extraction: dict[str, Any] = field(default_factory=dict)
     tool_selection: dict[str, Any] = field(default_factory=dict)
     intent_classification: dict[str, Any] = field(default_factory=dict)
     task_success: dict[str, Any] = field(default_factory=dict)
@@ -67,7 +63,6 @@ class ModeReport:
         return {
             "mode": self.mode,
             "timestamp": self.timestamp,
-            "param_extraction": self.param_extraction,
             "tool_selection": self.tool_selection,
             "intent_classification": self.intent_classification,
             "task_success": self.task_success,
@@ -103,9 +98,8 @@ def load_dataset(path: str | Path) -> dict[str, Any]:
         raise FileNotFoundError(f"Benchmark dataset not found at {path}")
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    logger.info("Loaded benchmark dataset from %s (%d param, %d tool, %d task, %d mem_ret, %d reg)",
+    logger.info("Loaded benchmark dataset from %s (%d tool, %d task, %d reg)",
                 path,
-                len(data.get("param_extraction", [])),
                 len(data.get("tool_selection", [])),
                 len(data.get("task_success", [])),
                 len(data.get("regression", [])))
@@ -138,17 +132,6 @@ def _load_tool_selector(models_dir: str | Path):
     return model
 
 
-def _load_param_extraction(models_dir: str | Path):
-    """Load parameter extraction model; return None if unavailable."""
-    path = Path(models_dir) / "parameter_extraction.pkl"
-    if not path.exists():
-        logger.warning("Parameter extraction model not found at %s", path)
-        return None
-    model = ParameterExtractionModel()
-    model.load(str(path))
-    return model
-
-
 # ── Heuristic helpers ─────────────────────────────────────────────────────────
 
 
@@ -173,28 +156,6 @@ def _domain_to_expected_tools(domain: str) -> list[str]:
 
 
 # ── Benchmarks ────────────────────────────────────────────────────────────────
-
-
-def _run_param_extraction_benchmark(
-    test_cases: list[dict[str, Any]],
-    model: ParameterExtractionModel | None,
-) -> dict[str, Any]:
-    """Evaluate parameter extraction predictions against ground truth.
-
-    When model is None, returns a placeholder report indicating the model
-    is not available.
-    """
-    if model is None:
-        return {
-            "available": False,
-            "total": 0,
-            "note": "Parameter extraction model not available",
-        }
-
-    evaluator = ParameterExtractionEvaluator()
-    metrics = evaluator.evaluate_model(model, test_cases)
-    metrics["available"] = True
-    return metrics
 
 
 def _run_tool_selection_benchmark(
@@ -370,7 +331,6 @@ def _run_task_success_benchmark(
 
 def _run_latency_benchmark(
     test_cases: list[dict[str, Any]],
-    param_model: ParameterExtractionModel | None,
     tool_selector: ToolSelectorModel | None,
     mode: str,
 ) -> dict[str, Any]:
@@ -378,7 +338,6 @@ def _run_latency_benchmark(
     metrics: dict[str, list[float]] = {
         "intent": [],
         "tool_selection": [],
-        "parameter_extraction": [],
     }
 
     # Reset model cache once, not per-sample.
@@ -401,11 +360,6 @@ def _run_latency_benchmark(
             start = time.perf_counter()
             tool_selector.predict(request)
             metrics["tool_selection"].append((time.perf_counter() - start) * 1000)
-
-        if mode == "micro_model" and param_model is not None:
-            start = time.perf_counter()
-            param_model.predict(request, "filesystem_read")
-            metrics["parameter_extraction"].append((time.perf_counter() - start) * 1000)
 
     summary = {}
     for key, values in metrics.items():
@@ -452,7 +406,7 @@ def _detect_regressions(
 
     regressions: list[dict[str, Any]] = []
 
-    for section in ("param_extraction", "tool_selection", "intent_classification", "task_success"):
+    for section in ("tool_selection", "intent_classification", "task_success"):
         for key in ("accuracy", "pass_rate", "avg_latency_ms"):
             cur_val = current.get(section, {}).get(key)
             prev_val = previous.get(section, {}).get(key)
@@ -554,29 +508,17 @@ def run_mode(
     logger.info("Running benchmark in '%s' mode", mode)
     logger.info("=" * 60)
 
-    param_model = _load_param_extraction(config.models_dir) if mode == "micro_model" else None
     tool_selector = _load_tool_selector(config.models_dir) if mode == "micro_model" else None
 
-    # 1. Parameter extraction (micro-model only).
-    pe_cases = dataset.get("param_extraction", [])
-    if pe_cases:
-        logger.info("Running parameter extraction benchmark (%d cases)...", len(pe_cases))
-        report.param_extraction = _run_param_extraction_benchmark(pe_cases, param_model)
-        if not report.param_extraction.get("available", False):
-            logger.info("  Parameter extraction skipped — model not available")
-        else:
-            logger.info("  Exact match rate: %.2f%%",
-                        report.param_extraction.get("exact_match_rate", 0) * 100)
-
-    # 2. Tool selection.
+    # 1. Tool selection.
     ts_cases = dataset.get("tool_selection", [])
     if ts_cases:
         logger.info("Running tool selection benchmark (%d cases)...", len(ts_cases))
         report.tool_selection = _run_tool_selection_benchmark(ts_cases, tool_selector, mode)
         logger.info("  Accuracy: %.2f%%", report.tool_selection.get("accuracy", 0) * 100)
 
-    # 3. Intent classification.
-    all_cases = pe_cases + ts_cases + dataset.get("regression", [])
+    # 2. Intent classification.
+    all_cases = ts_cases + dataset.get("regression", [])
     seen_requests: set[str] = set()
     unique_cases: list[dict[str, Any]] = []
     for tc in all_cases:
@@ -589,7 +531,7 @@ def run_mode(
         report.intent_classification = _run_intent_benchmark(unique_cases, mode)
         logger.info("  Accuracy: %.2f%%", report.intent_classification.get("accuracy", 0) * 100)
 
-    # 4. Task success.
+    # 3. Task success.
     task_cases = dataset.get("task_success", [])
     if task_cases:
         logger.info("Running task success benchmark (%d cases, skip=%s)...",
@@ -598,15 +540,15 @@ def run_mode(
         if report.task_success.get("available", False):
             logger.info("  Pass rate: %.2f%%", report.task_success.get("pass_rate", 0) * 100)
 
-    # 5. Latency.
+    # 4. Latency.
     if unique_cases:
         logger.info("Running latency measurements (%d samples)...", len(unique_cases))
-        report.latency = _run_latency_benchmark(unique_cases, param_model, tool_selector, mode)
+        report.latency = _run_latency_benchmark(unique_cases, tool_selector, mode)
         for op, vals in report.latency.items():
             if vals.get("samples", 0) > 0:
                 logger.info("  %s: avg=%.3fms (n=%d)", op, vals["avg_ms"], vals["samples"])
 
-    # 6. Regression detection.
+    # 5. Regression detection.
     if previous_report is not None:
         prev_mode = previous_report.get(mode)
         if prev_mode:
@@ -651,20 +593,11 @@ def run_benchmark(config: BenchmarkConfig | None = None) -> ComparisonReport:
     # Build delta comparison.
     delta: dict[str, Any] = {}
 
-    for section in ("param_extraction", "tool_selection", "intent_classification", "task_success"):
+    for section in ("tool_selection", "intent_classification", "task_success"):
         mm = mm_report.to_dict().get(section, {})
         bl = baseline_report.to_dict().get(section, {})
 
-        if section == "param_extraction":
-            mm_exact = mm.get("exact_match_rate", 0)
-            bl_exact = bl.get("exact_match_rate", 0)
-            if not mm.get("available", False):
-                delta[section] = {"note": "micro-model not available"}
-            else:
-                delta[section] = {
-                    "exact_match_rate_delta": round(mm_exact - bl_exact, 4),
-                }
-        elif section == "task_success":
+        if section == "task_success":
             mm_pass = mm.get("pass_rate", 0)
             bl_pass = bl.get("pass_rate", 0)
             if not mm.get("available", False) and not bl.get("available", False):
@@ -721,7 +654,6 @@ def print_comparison(report: ComparisonReport) -> None:
     ]
 
     for section, label in [
-        ("param_extraction", "Parameter Extraction"),
         ("tool_selection", "Tool Selection"),
         ("intent_classification", "Intent Classification"),
         ("task_success", "Task Success"),
@@ -732,17 +664,7 @@ def print_comparison(report: ComparisonReport) -> None:
 
         lines.append(f"-- {label} {'-' * (55 - len(label))}")
 
-        if section == "param_extraction":
-            mm_avail = mm_s.get("available", False)
-            lines.append(f"  Micro-model:  {'available' if mm_avail else 'NOT AVAILABLE'}")
-            if mm_avail:
-                lines.append(f"    Exact match rate: {mm_s.get('exact_match_rate', 0):.2%}")
-                lines.append(f"    Total cases:      {mm_s.get('total', 0)}")
-                for tool, tm in mm_s.get("per_tool", {}).items():
-                    lines.append(f"    [{tool}] exact: {tm.get('exact_match_rate', 0):.2%}  (n={tm.get('total', 0)})")
-            lines.append("  Baseline:     N/A (no heuristic parameter extraction)")
-
-        elif section == "task_success":
+        if section == "task_success":
             for mode_name, mode_s in [("Micro-model", mm_s), ("Baseline", bl_s)]:
                 avail = mode_s.get("available", False)
                 if avail:

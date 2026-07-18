@@ -1,14 +1,23 @@
 import { create } from 'zustand'
-import type { TaskBrief, WsEvent } from '../api/types'
+import type { SystemSnapshot, TaskBrief, WsEvent } from '../api/types'
 
 /**
- * Central UI store. Slices:
- *  - connection: live WS connection state
- *  - events: global rolling event log + per-task logs
- *  - tasks: lightweight cache of task briefs, kept fresh by WS deltas
- *  - confirmations: pending approval requests from the backend
- *  - toasts: transient notifications (e.g. "task submitted")
+ * Richer connection state that reflects actual backend health.
+ *
+ * Connection is only "connected" when ALL conditions are true:
+ *   1. Backend process is running (Rust signal)
+ *   2. Health endpoint returns HTTP 200
+ *   3. REST API is reachable
+ *   4. WebSocket is connected
  */
+export type ConnectionStatus =
+  | { state: 'starting'; reason?: string }
+  | { state: 'starting_backend'; reason?: string }
+  | { state: 'waiting_health'; reason?: string }
+  | { state: 'connecting_ws'; reason?: string }
+  | { state: 'connected'; reason?: string }
+  | { state: 'offline'; reason: string }
+  | { state: 'error'; reason: string }
 
 export interface Confirmation {
   confirmation_id: string
@@ -26,9 +35,41 @@ export interface Toast {
 }
 
 interface AppState {
-  // connection
-  connected: boolean
-  setConnected: (v: boolean) => void
+  /** Multi-axis connection state — Connected only when ALL subsystems pass. */
+  connection: ConnectionStatus
+  setConnection: (v: ConnectionStatus) => void
+
+  /** true when the backend process reports "running" from Rust */
+  backendRunning: boolean
+  setBackendRunning: (v: boolean) => void
+
+  /** true when /api/health responds 200 */
+  healthOk: boolean
+  setHealthOk: (v: boolean) => void
+
+  /** true when any REST endpoint succeeds */
+  restOk: boolean
+  setRestOk: (v: boolean) => void
+
+  /** true when WebSocket readyState is OPEN */
+  wsConnected: boolean
+  setWsConnected: (v: boolean) => void
+
+  /** Last health check latency in ms */
+  healthLatency: number | null
+  setHealthLatency: (v: number | null) => void
+
+  /** Last REST check latency in ms */
+  restLatency: number | null
+  setRestLatency: (v: number | null) => void
+
+  /** Backend PID (from Rust) */
+  backendPid: number | null
+  setBackendPid: (v: number | null) => void
+
+  /** Overall startup duration tracking */
+  startupStartedAt: number | null
+  setStartupStartedAt: (v: number | null) => void
 
   // events (global)
   events: WsEvent[]
@@ -39,7 +80,6 @@ interface AppState {
   taskEvents: Record<string, WsEvent[]>
   taskBriefs: Record<string, TaskBrief>
 
-  /** Upsert a task brief (from REST or WS). */
   upsertTask: (t: TaskBrief) => void
   upsertTasks: (ts: TaskBrief[]) => void
   removeTask: (publicId: string) => void
@@ -53,14 +93,73 @@ interface AppState {
   toasts: Toast[]
   pushToast: (tone: Toast['tone'], message: string) => void
   dismissToast: (id: string) => void
+
+  // system monitoring snapshot (pushed via WebSocket)
+  systemSnapshot: SystemSnapshot | null
+  setSystemSnapshot: (snap: SystemSnapshot) => void
 }
 
 const MAX_EVENTS = 400
 const MAX_TASK_EVENTS = 300
 
-export const useAppStore = create<AppState>((set) => ({
-  connected: false,
-  setConnected: (v) => set({ connected: v }),
+function computeConnection(flags: {
+  backendRunning: boolean
+  healthOk: boolean
+  restOk: boolean
+  wsConnected: boolean
+  healthLatency: number | null
+  restLatency: number | null
+}): ConnectionStatus {
+  if (!flags.backendRunning) return { state: 'starting_backend', reason: 'Backend process not yet started' }
+  if (!flags.healthOk) return { state: 'waiting_health', reason: 'Health endpoint not responding' }
+  if (!flags.restOk) return { state: 'offline', reason: 'REST API unreachable' }
+  if (!flags.wsConnected) return { state: 'connecting_ws', reason: 'WebSocket not connected' }
+  return { state: 'connected' }
+}
+
+export const useAppStore = create<AppState>((set, get) => ({
+  connection: { state: 'starting' },
+  setConnection: (v) => set({ connection: v }),
+
+  backendRunning: false,
+  setBackendRunning: (v) => {
+    set({ backendRunning: v })
+    const s = get()
+    set({ connection: computeConnection({ backendRunning: v, healthOk: s.healthOk, restOk: s.restOk, wsConnected: s.wsConnected, healthLatency: s.healthLatency, restLatency: s.restLatency }) })
+  },
+
+  healthOk: false,
+  setHealthOk: (v) => {
+    set({ healthOk: v })
+    const s = get()
+    set({ connection: computeConnection({ backendRunning: s.backendRunning, healthOk: v, restOk: s.restOk, wsConnected: s.wsConnected, healthLatency: s.healthLatency, restLatency: s.restLatency }) })
+  },
+
+  restOk: false,
+  setRestOk: (v) => {
+    set({ restOk: v })
+    const s = get()
+    set({ connection: computeConnection({ backendRunning: s.backendRunning, healthOk: s.healthOk, restOk: v, wsConnected: s.wsConnected, healthLatency: s.healthLatency, restLatency: s.restLatency }) })
+  },
+
+  wsConnected: false,
+  setWsConnected: (v) => {
+    set({ wsConnected: v })
+    const s = get()
+    set({ connection: computeConnection({ backendRunning: s.backendRunning, healthOk: s.healthOk, restOk: s.restOk, wsConnected: v, healthLatency: s.healthLatency, restLatency: s.restLatency }) })
+  },
+
+  healthLatency: null,
+  setHealthLatency: (v) => set({ healthLatency: v }),
+
+  restLatency: null,
+  setRestLatency: (v) => set({ restLatency: v }),
+
+  backendPid: null,
+  setBackendPid: (v) => set({ backendPid: v }),
+
+  startupStartedAt: null,
+  setStartupStartedAt: (v) => set({ startupStartedAt: v }),
 
   events: [],
   addEvent: (ev) =>
@@ -72,7 +171,6 @@ export const useAppStore = create<AppState>((set) => ({
         const prev = taskEvents[topic] ?? []
         taskEvents[topic] = [...prev.slice(-(MAX_TASK_EVENTS - 1)), ev]
       }
-      // Patch task status from task.* lifecycle events.
       const briefs = { ...s.taskBriefs }
       const existing = topic ? briefs[topic] : undefined
       if (topic && existing) {
@@ -145,10 +243,12 @@ export const useAppStore = create<AppState>((set) => ({
   pushToast: (tone, message) => {
     const id = Math.random().toString(36).slice(2)
     set((s) => ({ toasts: [...s.toasts, { id, tone, message }] }))
-    // auto-dismiss after 4.2s
     setTimeout(() => {
       set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) }))
     }, 4200)
   },
   dismissToast: (id) => set((s) => ({ toasts: s.toasts.filter((t) => t.id !== id) })),
+
+  systemSnapshot: null,
+  setSystemSnapshot: (snap) => set({ systemSnapshot: snap }),
 }))

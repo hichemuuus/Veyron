@@ -2,7 +2,6 @@
 
 Covers:
   - Dataset loading
-  - Parameter extraction evaluator (enhanced)
   - Tool selection benchmark (micro-model and baseline modes)
   - Intent classification benchmark
   - Latency measurement
@@ -16,8 +15,6 @@ import json
 from pathlib import Path
 
 import pytest
-from veyron.intelligence.parameter_extraction.evaluation import ParameterExtractionEvaluator
-from veyron.intelligence.parameter_extraction.model import ParameterExtractionModel
 from veyron.intelligence.tool_selector.model import ToolSelectorModel
 
 from benchmarks.intelligence_benchmark import (
@@ -27,7 +24,6 @@ from benchmarks.intelligence_benchmark import (
     _heuristic_intent_from_domain,
     _run_intent_benchmark,
     _run_latency_benchmark,
-    _run_param_extraction_benchmark,
     _run_tool_selection_benchmark,
     load_dataset,
     run_benchmark,
@@ -45,7 +41,6 @@ class TestDatasetLoading:
         data = load_dataset(Path(__file__).parents[2] / "benchmarks" / "datasets" / "intelligence_benchmark.json")
         assert "metadata" in data
         assert data["metadata"]["version"] == "1.0"
-        assert len(data.get("param_extraction", [])) > 0
         assert len(data.get("tool_selection", [])) > 0
         assert len(data.get("task_success", [])) > 0
         assert len(data.get("regression", [])) > 0
@@ -58,10 +53,6 @@ class TestDatasetLoading:
         """A tiny inline dataset must be usable by the benchmark."""
         data = {
             "metadata": {"version": "1.0"},
-            "param_extraction": [
-                {"id": "p1", "request": "list files", "tool_name": "filesystem_read",
-                 "expected_parameters": {"path": "."}},
-            ],
             "tool_selection": [
                 {"id": "t1", "request": "check cpu", "expected_tools": ["system_monitor"]},
             ],
@@ -72,68 +63,7 @@ class TestDatasetLoading:
         with open(path, "w") as f:
             json.dump(data, f)
         loaded = load_dataset(path)
-        assert len(loaded["param_extraction"]) == 1
         assert len(loaded["tool_selection"]) == 1
-
-
-# ═══════════════════════════════════════════════════════════════════
-# Parameter extraction evaluator
-# ═══════════════════════════════════════════════════════════════════
-
-
-class TestParameterExtractionEvaluator:
-    def test_evaluate_model_exact_match(self):
-        model = ParameterExtractionModel()
-        model.fit([
-            ("list files in tests", "filesystem_read", {"path": "tests"}),
-            ("check cpu", "system_monitor", {"metric": "cpu"}),
-        ])
-        test_cases = [
-            {"id": "t1", "request": "list files in tests", "tool_name": "filesystem_read",
-             "expected_parameters": {"path": "tests"}},
-            {"id": "t2", "request": "check cpu", "tool_name": "system_monitor",
-             "expected_parameters": {"metric": "cpu"}},
-        ]
-        evaluator = ParameterExtractionEvaluator()
-        metrics = evaluator.evaluate_model(model, test_cases)
-        assert metrics["total"] == 2
-        assert metrics["exact_match_rate"] == 1.0
-
-    def test_evaluate_model_partial_match(self):
-        model = ParameterExtractionModel()
-        model.fit([
-            ("list files in tests", "filesystem_read", {"path": "tests", "pattern": "*.py"}),
-            ("list files in src", "filesystem_read", {"path": "src", "pattern": "*.ts"}),
-        ])
-        # Request similar to training but parameter differs slightly.
-        test_cases = [
-            {"id": "t1", "request": "list files in tests", "tool_name": "filesystem_read",
-             "expected_parameters": {"path": "tests", "pattern": "*.py"}},
-        ]
-        evaluator = ParameterExtractionEvaluator()
-        metrics = evaluator.evaluate_model(model, test_cases)
-        assert metrics["total"] == 1
-        assert len(metrics["per_tool"]) > 0
-
-    def test_evaluate_model_no_model_returns_available_false(self):
-        metrics = _run_param_extraction_benchmark([], model=None)
-        assert metrics["available"] is False
-
-    def test_evaluate_model_tiny(self):
-        """Verify per-tool breakdown exists."""
-        model = ParameterExtractionModel()
-        model.fit([
-            ("list tests", "filesystem_read", {"path": "tests"}),
-            ("check cpu", "system_monitor", {"metric": "cpu"}),
-        ])
-        test_cases = [
-            {"id": "t1", "request": "list tests", "tool_name": "filesystem_read",
-             "expected_parameters": {"path": "tests"}},
-        ]
-        evaluator = ParameterExtractionEvaluator()
-        metrics = evaluator.evaluate_model(model, test_cases)
-        assert "per_tool" in metrics
-        assert "filesystem_read" in metrics["per_tool"]
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -207,14 +137,12 @@ class TestIntentBenchmark:
 
 class TestLatencyBenchmark:
     def test_micro_model_mode(self):
-        model = ParameterExtractionModel()
-        model.fit([("list tests", "filesystem_read", {"path": "tests"})])
         tool_selector = ToolSelectorModel()
         tool_selector.fit(["check cpu"], [["system_monitor"]])
         test_cases = [
             {"id": "t1", "request": "check cpu usage", "expected_tools": ["system_monitor"]},
         ]
-        metrics = _run_latency_benchmark(test_cases, model, tool_selector, mode="micro_model")
+        metrics = _run_latency_benchmark(test_cases, tool_selector, mode="micro_model")
         assert "intent" in metrics
         assert "tool_selection" in metrics
         assert metrics["intent"]["samples"] > 0
@@ -223,12 +151,10 @@ class TestLatencyBenchmark:
         test_cases = [
             {"id": "t1", "request": "check cpu usage", "expected_tools": ["system_monitor"]},
         ]
-        metrics = _run_latency_benchmark(test_cases, param_model=None, tool_selector=None, mode="baseline")
+        metrics = _run_latency_benchmark(test_cases, tool_selector=None, mode="baseline")
         assert "intent" in metrics
         assert metrics["intent"]["samples"] > 0
-        # Tool selection and param extraction not measured in baseline.
         assert metrics["tool_selection"]["samples"] == 0
-        assert metrics["parameter_extraction"]["samples"] == 0
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -280,10 +206,6 @@ class TestFullComparison:
         """End-to-end comparison with a tiny inline dataset and no real models."""
         data = {
             "metadata": {"version": "1.0"},
-            "param_extraction": [
-                {"id": "p1", "request": "list files", "tool_name": "filesystem_read",
-                 "expected_parameters": {"path": "."}},
-            ],
             "tool_selection": [
                 {"id": "t1", "request": "check cpu", "expected_tools": ["system_monitor"]},
             ],
@@ -306,7 +228,6 @@ class TestFullComparison:
 
         assert report.micro_model["mode"] == "micro_model"
         assert report.baseline["mode"] == "baseline"
-        assert "param_extraction" in report.delta
         assert "tool_selection" in report.delta
         assert "latency" in report.delta
         assert len(report.delta) > 0
@@ -315,7 +236,6 @@ class TestFullComparison:
         """Verify run_mode produces a ModeReport with expected sections."""
         data = {
             "metadata": {"version": "1.0"},
-            "param_extraction": [],
             "tool_selection": [
                 {"id": "t1", "request": "check cpu", "expected_tools": ["system_monitor"]},
             ],
@@ -334,9 +254,6 @@ class TestFullComparison:
         report = run_mode(data, config, mode="micro_model")
         assert report.mode == "micro_model"
         assert report.tool_selection["total"] > 0
-        assert report.param_extraction.get("total", 0) == 0
-        # task_success has no cases, so it's not populated.
-        assert report.task_success == {}
 
 
 # ═══════════════════════════════════════════════════════════════════

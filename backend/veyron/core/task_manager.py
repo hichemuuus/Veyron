@@ -17,6 +17,8 @@ from uuid import uuid4
 from veyron.core.agent import get_agent
 from veyron.core.events import Event, get_bus
 from veyron.core.tracker import ExecutionTracker
+from sqlmodel import select, delete, update
+
 from veyron.db.base import sync_session_scope
 from veyron.db.models import Task, TaskStatus
 
@@ -86,7 +88,7 @@ class TaskManager:
     def get_task(self, public_id: str) -> TaskInfo | None:
         """Get full task detail with progress."""
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == public_id).first()
+            task = session.exec(select(Task).where(Task.public_id == public_id)).first()
             if task is None:
                 return None
             return self._to_info(task)
@@ -100,18 +102,18 @@ class TaskManager:
     ) -> list[TaskInfo]:
         """List tasks with optional filters."""
         with sync_session_scope() as session:
-            q = session.query(Task)
+            stmt = select(Task)
             if status:
-                q = q.filter(Task.status == status)
+                stmt = stmt.where(Task.status == status)
             if mode:
-                q = q.filter(Task.mode == mode)
-            q = q.order_by(Task.created_at.desc()).offset(offset).limit(limit)
-            return [self._to_brief(t) for t in q.all()]
+                stmt = stmt.where(Task.mode == mode)
+            stmt = stmt.order_by(Task.created_at.desc()).offset(offset).limit(limit)
+            return [self._to_brief(t) for t in session.exec(stmt).all()]
 
     def cancel_task(self, public_id: str) -> TaskInfo | None:
         """Cancel a running or paused task."""
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == public_id).first()
+            task = session.exec(select(Task).where(Task.public_id == public_id)).first()
             if task is None:
                 return None
             if task.status in (TaskStatus.RUNNING, TaskStatus.PLANNING, TaskStatus.CREATED, TaskStatus.PAUSED):
@@ -130,7 +132,7 @@ class TaskManager:
     def pause_task(self, public_id: str) -> TaskInfo | None:
         """Pause a running task."""
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == public_id).first()
+            task = session.exec(select(Task).where(Task.public_id == public_id)).first()
             if task is None:
                 return None
             if task.status == TaskStatus.RUNNING:
@@ -148,7 +150,7 @@ class TaskManager:
     def resume_task(self, public_id: str) -> TaskInfo | None:
         """Resume a paused or failed task."""
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == public_id).first()
+            task = session.exec(select(Task).where(Task.public_id == public_id)).first()
             if task is None:
                 return None
             if task.status in (TaskStatus.PAUSED, TaskStatus.FAILED, TaskStatus.CANCELLED):
@@ -162,12 +164,12 @@ class TaskManager:
     def delete_task(self, public_id: str) -> bool:
         """Permanently delete a task and its steps."""
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == public_id).first()
+            task = session.exec(select(Task).where(Task.public_id == public_id)).first()
             if task is None:
                 return False
             # Delete associated execution steps.
             from veyron.db.models import ExecutionStep
-            session.query(ExecutionStep).filter(ExecutionStep.task_public_id == public_id).delete()
+            session.exec(delete(ExecutionStep).where(ExecutionStep.task_public_id == public_id))
             session.delete(task)
             logger.info("task deleted: %s", public_id)
             return True
@@ -189,19 +191,84 @@ class TaskManager:
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Get execution step timeline for a task."""
-        return self.tracker.get_timeline(public_id, limit=limit)
+        return self._query_timeline_sync(public_id, limit=limit)
 
     # ── Internals ─────────────────────────────────────────────────────
 
+    def _query_timeline_sync(
+        self,
+        task_public_id: str,
+        limit: int = 200,
+    ) -> list[dict[str, Any]]:
+        """Sync fallback to get timeline from DB directly (avoids async tracker)."""
+        from veyron.db.base import sync_session_scope
+        from veyron.db.models import ExecutionStep
+
+        with sync_session_scope() as session:
+            steps = (
+                session.exec(
+                    select(ExecutionStep)
+                    .where(ExecutionStep.task_public_id == task_public_id)
+                    .order_by(ExecutionStep.step_index)
+                    .limit(limit)
+                )
+                .all()
+            )
+            return [
+                {
+                    "id": s.id,
+                    "step_index": s.step_index,
+                    "step_type": s.step_type.value,
+                    "name": s.name,
+                    "status": s.status.value,
+                    "started_at": s.started_at.isoformat() if s.started_at else None,
+                    "finished_at": s.finished_at.isoformat() if s.finished_at else None,
+                    "duration_ms": s.duration_ms,
+                    "input_preview": s.input_preview[:200] if s.input_preview else "",
+                    "output_preview": s.output_preview[:200] if s.output_preview else "",
+                    "error": s.error,
+                    "retry_count": s.retry_count,
+                }
+                for s in steps
+            ]
+
+    def _query_task_summary_sync(self, task_public_id: str) -> dict[str, Any]:
+        """Sync fallback to get task summary directly from DB."""
+        from veyron.db.base import sync_session_scope
+        from veyron.db.models import Task
+
+        steps = self._query_timeline_sync(task_public_id)
+        total = len(steps)
+        completed = sum(1 for s in steps if s["status"] == "completed")
+        failed = sum(1 for s in steps if s["status"] == "failed")
+        skipped = sum(1 for s in steps if s["status"] == "skipped")
+        total_duration = sum(s["duration_ms"] for s in steps if s["duration_ms"])
+
+        with sync_session_scope() as session:
+            task = session.exec(select(Task).where(Task.public_id == task_public_id)).first()
+
+        return {
+            "task_public_id": task_public_id,
+            "total_steps": total,
+            "completed_steps": completed,
+            "failed_steps": failed,
+            "skipped_steps": skipped,
+            "total_duration_ms": total_duration,
+            "tool_count": task.tool_count if task else 0,
+            "retry_count": task.retry_count if task else 0,
+            "status": task.status.value if task else "unknown",
+        }
+
     def _compute_progress(self, task: Task) -> TaskProgress:
         """Build a TaskProgress from a Task record."""
-        summary = self.tracker.get_task_summary(task.public_id)
-        total = summary.get("total_steps", 0) or task.total_steps
-        completed = summary.get("completed_steps", 0) or task.completed_steps
-        failed = summary.get("failed_steps", 0)
-        retries = summary.get("retry_count", 0) or task.retry_count
-        tools = summary.get("tool_count", 0) or task.tool_count
-        current = summary.get("current_step", "")
+        _safe_int = lambda v: v if isinstance(v, int) else 0
+        summary = self._query_task_summary_sync(task.public_id)
+        total = _safe_int(summary.get("total_steps", 0) or task.total_steps)
+        completed = _safe_int(summary.get("completed_steps", 0) or task.completed_steps)
+        failed = summary.get("failed_steps", 0) or 0
+        retries = _safe_int(summary.get("retry_count", 0) or task.retry_count)
+        tools = _safe_int(summary.get("tool_count", 0) or task.tool_count)
+        current = summary.get("current_step", "") or ""
 
         percent = (completed / total * 100) if total > 0 else 0.0
         return TaskProgress(
@@ -217,7 +284,7 @@ class TaskManager:
     def _to_info(self, task: Task) -> TaskInfo:
         """Convert a Task model to a TaskInfo."""
         progress = self._compute_progress(task)
-        history = self.tracker.get_timeline(task.public_id, limit=20)
+        history = self._query_timeline_sync(task.public_id, limit=20)
         return TaskInfo(
             public_id=task.public_id,
             request=task.request,
@@ -235,7 +302,8 @@ class TaskManager:
 
     def _to_brief(self, task: Task) -> TaskInfo:
         """Convert a Task model to a brief TaskInfo (no details)."""
-        summary = self.tracker.get_task_summary(task.public_id)
+        summary = self._query_task_summary_sync(task.public_id)
+        _safe_int = lambda v: v if isinstance(v, int) else 0
         return TaskInfo(
             public_id=task.public_id,
             request=task.request,
@@ -248,10 +316,10 @@ class TaskManager:
             finished_at=task.finished_at,
             updated_at=task.updated_at,
             progress=TaskProgress(
-                total_steps=summary.get("total_steps", 0),
-                completed_steps=summary.get("completed_steps", 0),
-                retry_count=summary.get("retry_count", 0) or task.retry_count,
-                tool_count=summary.get("tool_count", 0) or task.tool_count,
+                total_steps=_safe_int(summary.get("total_steps", 0) or task.total_steps),
+                completed_steps=_safe_int(summary.get("completed_steps", 0) or task.completed_steps),
+                retry_count=_safe_int(summary.get("retry_count", 0) or task.retry_count),
+                tool_count=_safe_int(summary.get("tool_count", 0) or task.tool_count),
             ),
         )
 

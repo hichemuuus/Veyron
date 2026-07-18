@@ -32,27 +32,60 @@ SIDECAR_OUT = f"{SIDECAR_NAME}-{TARGET_TRIPLE}.exe"
 def build_sidecar():
     os.makedirs(BINARIES_DIR, exist_ok=True)
 
-    # Run PyInstaller
+    HIDDEN_IMPORTS = [
+        # FastAPI / Uvicorn
+        "uvicorn.logging", "uvicorn.loops.auto", "uvicorn.protocols.http.auto",
+        "uvicorn.protocols.websockets.auto",
+        # Pydantic
+        "pydantic", "pydantic_settings", "pydantic.fields",
+        "pydantic.generics", "pydantic.dataclasses",
+        # SQLAlchemy / SQLModel
+        "sqlalchemy", "sqlalchemy.sql.default_comparator",
+        "sqlalchemy.sql.type_api", "sqlalchemy.dialects.sqlite",
+        "sqlmodel", "aiosqlite",
+        # YAML
+        "yaml", "_yaml",
+        # HTTP
+        "httpx", "httpcore", "h11", "sniffio",
+        # System
+        "psutil",
+        # ML / sklearn
+        "sklearn", "sklearn.feature_extraction.text",
+        "sklearn.linear_model", "sklearn.pipeline",
+        "sklearn.metrics.pairwise", "sklearn.dummy",
+        "sklearn.multiclass", "sklearn.preprocessing",
+        "sklearn.ensemble", "sklearn.tree", "sklearn.neighbors",
+        "sklearn.svm", "sklearn.cluster", "sklearn.decomposition",
+        # Numerical
+        "numpy", "scipy", "scipy.sparse", "scipy.special",
+        # Multipart
+        "multipart", "python_multipart",
+        # MLflow
+        "mlflow", "mlflow.models", "mlflow.pyfunc",
+        # Cloudpickle (mlflow dependency)
+        "cloudpickle",
+        # Dateutil (pandas dependency)
+        "dateutil", "dateutil.parser", "dateutil.tz",
+    ]
+
     print(f"Building {SIDECAR_NAME} with PyInstaller...")
-    result = subprocess.run(
-        [
-            sys.executable, "-m", "PyInstaller",
-            "--onefile",
-            "--name", SIDECAR_NAME,
-            "--distpath", BINARIES_DIR,
-            "--workpath", os.path.join(SCRIPTS_DIR, "build", "pyi_work"),
-            "--specpath", os.path.join(SCRIPTS_DIR, "build"),
-            "--hidden-import", "uvicorn.logging",
-            "--hidden-import", "uvicorn.loops.auto",
-            "--hidden-import", "uvicorn.protocols.http.auto",
-            "--hidden-import", "uvicorn.protocols.websockets.auto",
-            "--add-data", f"{BACKEND_DIR}/veyron{os.pathsep}veyron",
-            os.path.join(BACKEND_DIR, "veyron", "main.py"),
-        ],
-        cwd=PROJECT_ROOT,
-        capture_output=True,
-        text=True,
-    )
+    cmd = [
+        sys.executable, "-m", "PyInstaller",
+        "--onefile",
+        "--noconsole",
+        "--name", SIDECAR_NAME,
+        "--distpath", BINARIES_DIR,
+        "--workpath", os.path.join(SCRIPTS_DIR, "build", "pyi_work"),
+        "--specpath", os.path.join(SCRIPTS_DIR, "build"),
+    ]
+    for hi in HIDDEN_IMPORTS:
+        cmd.extend(["--hidden-import", hi])
+    cmd.extend([
+        "--add-data", f"{BACKEND_DIR}/veyron{os.pathsep}veyron",
+        os.path.join(BACKEND_DIR, "veyron", "main.py"),
+    ])
+
+    result = subprocess.run(cmd, cwd=PROJECT_ROOT, capture_output=True, text=True)
 
     if result.returncode != 0:
         print("PyInstaller failed:")

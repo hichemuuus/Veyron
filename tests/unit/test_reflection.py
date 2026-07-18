@@ -130,8 +130,8 @@ async def test_store_reflection_memories(fresh_db, engine):
 async def test_reflect_with_tracker_data(fresh_db, engine):
     tracker = ExecutionTracker()
     pid = "test_tracker_reflect"
-    tracker.start_task(pid, "test request")
-    tracker.complete_task(pid, result="done")
+    await tracker.start_task(pid, "test request")
+    await tracker.complete_task(pid, result="done")
 
     engine.tracker = tracker
     result = await engine.reflect("test request", task_public_id=pid)

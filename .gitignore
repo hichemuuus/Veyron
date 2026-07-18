@@ -47,14 +47,48 @@ Thumbs.db
 .env.local
 .env.*.local
 config.yaml
+veyron-updater-key.private
 
 # Logs
 *.log
+
+# Build installers
+Veyron_*.exe
+Veyron_*.msi
 
 # Internal / handoff docs (never public)
 HANDOFF.md
 PHASE*_REPORT.md
 **/PHASE*_REPORT.md
+
+# Auto-generated reports and audits
+*_AUDIT.md
+*_EVIDENCE.md
+*_PROFILE.md
+VALIDATION_REPORT.md
+validation_report.*
+*_BASELINE.md
+*_VERDICT.md
+STARTUP_*.md
+UPDATE_*.md
+RELEASE_*.md
+RUNTIME_*.md
+STABILIZATION_*.md
+VERIFICATION_*.md
+LEARNING_REPORT.md
+BENCHMARK_REPORT.md
+AUTO_UPDATE.md
+MODEL_AUDIT.md
+BENCHMARK_DATASET.json
+
+# Runtime databases and logs
+mlflow.db
+backend/mlflow.db
+backend/backend.err
+frontend/vite.err
+
+# Screenshots
+screenshot*.png
 
 # Runtime interaction data (never commit)
 data/
@@ -65,3 +99,8 @@ benchmarks/data/
 
 # Pickle / serialized models
 *.pkl
+
+# Plugin installs (runtime)
+backend/plugins/*/
+!backend/plugins/__init__.py
+!backend/plugins/example_*

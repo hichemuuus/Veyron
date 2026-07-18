@@ -14,8 +14,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
-from veyron.config import DATA_DIR
+from veyron.config import DATA_DIR, get_settings
+from veyron.db.base import sync_session_scope
+from veyron.db.models import LearningEvent
 from veyron.intelligence.models.registry import ModelRegistry
 from veyron.intelligence.models.schema import (
     STATUS_CANDIDATE,
@@ -139,12 +142,56 @@ class BenchmarkComparator:
             deltas=deltas,
         )
 
+    # ── Benchmark type support ──────────────────────────────────────────
+
+    # Mapping of benchmark types to their expected metric keys.
+    BENCHMARK_TYPE_METRICS: dict[str, list[str]] = {
+        "reflection_quality": ["relevance", "coherence", "actionability"],
+        "memory_quality": ["precision", "recall", "mrr"],
+        "skill_detection": ["precision", "recall", "f1"],
+        "workflow_prediction": ["accuracy", "step_completion", "efficiency"],
+    }
+
+    def compare_benchmark_type(
+        self,
+        candidate_metrics: dict[str, float],
+        production_metrics: dict[str, float] | None,
+        benchmark_type: str,
+    ) -> BenchmarkComparisonResult:
+        """Compare candidate vs production for a specific benchmark type."""
+        expected = self.BENCHMARK_TYPE_METRICS.get(
+            benchmark_type, list(candidate_metrics.keys())
+        )
+        filtered_candidate = {
+            k: candidate_metrics[k] for k in expected if k in candidate_metrics
+        }
+        filtered_production = {
+            k: production_metrics[k]
+            for k in expected
+            if production_metrics and k in production_metrics
+        }
+        return self.compare(
+            filtered_candidate, filtered_production or None, benchmark_type,
+        )
+
 
 @dataclass
 class BenchmarkComparisonResult:
     is_better: bool
     reason: str
     deltas: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass
+class DatasetQualityInfo:
+    """Quality assessment for a training dataset."""
+
+    total_examples: int = 0
+    unique_examples: int = 0
+    duplicate_count: int = 0
+    avg_confidence: float = 0.0
+    label_distribution: dict[str, int] = field(default_factory=dict)
+    suggested_actions: list[str] = field(default_factory=list)
 
 
 class RetrainingOrchestrator:
@@ -253,14 +300,27 @@ class RetrainingOrchestrator:
             candidate_metrics, plan.production_metrics, model_type,
         )
 
-        if not comparison.is_better and not force:
-            return RetrainResult(
-                success=False,
-                plan=plan,
-                error=f"candidate not better: {comparison.reason}",
-                candidate_metrics=candidate_metrics,
-                comparison=comparison,
-            )
+        if not comparison.is_better:
+            if not force:
+                return RetrainResult(
+                    success=False,
+                    plan=plan,
+                    error=f"candidate not better: {comparison.reason}",
+                    candidate_metrics=candidate_metrics,
+                    comparison=comparison,
+                )
+            # force=True, but honour the never-deploy-weaker policy.
+            if get_settings().model.never_deploy_weaker:
+                return RetrainResult(
+                    success=False,
+                    plan=plan,
+                    error=(
+                        f"candidate not better and never_deploy_weaker is enabled"
+                        f" (force ignored): {comparison.reason}"
+                    ),
+                    candidate_metrics=candidate_metrics,
+                    comparison=comparison,
+                )
 
         # Save candidate and register.
         version = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
@@ -312,6 +372,171 @@ class RetrainingOrchestrator:
             metadata=metadata,
             model=model,
         )
+
+    # ── Benchmark regression detection ──────────────────────────────────
+
+    def detect_regressions(self, benchmark_history: list[dict]) -> list[dict]:
+        """Compare the latest benchmark run against previous runs.
+
+        Flags any metrics that regressed beyond a threshold (>5% drop).
+
+        Args:
+            benchmark_history: List of dicts, each containing at minimum
+                ``metrics`` (or ``metrics_json``) and ``created_at`` keys.
+
+        Returns:
+            List of regression dicts with keys: metric, previous_avg,
+            current, pct_change, threshold.
+        """
+        if len(benchmark_history) < 2:
+            return []
+
+        sorted_history = sorted(benchmark_history, key=lambda x: x.get("created_at", ""))
+        latest = sorted_history[-1]
+        previous = sorted_history[:-1]
+
+        def _extract_metrics(run: dict) -> dict[str, float]:
+            m = run.get("metrics", {})
+            if not m and "metrics_json" in run:
+                import json
+                m = json.loads(run["metrics_json"])
+            return m
+
+        latest_metrics = _extract_metrics(latest)
+        regressions: list[dict] = []
+
+        for key, latest_val in latest_metrics.items():
+            prev_values: list[float] = []
+            for run in previous:
+                pm = _extract_metrics(run)
+                if key in pm:
+                    prev_values.append(pm[key])
+            if not prev_values:
+                continue
+            avg_prev = sum(prev_values) / len(prev_values)
+            if avg_prev == 0:
+                continue
+            pct_change = ((latest_val - avg_prev) / avg_prev) * 100
+            if pct_change < -5.0:
+                regressions.append({
+                    "metric": key,
+                    "previous_avg": round(avg_prev, 4),
+                    "current": round(latest_val, 4),
+                    "pct_change": round(pct_change, 2),
+                    "threshold": -5.0,
+                })
+
+        return regressions
+
+    # ── Model rollback ──────────────────────────────────────────────────
+
+    def rollback_to(self, model_type: str, version: str) -> bool:
+        """Rollback a model to a previous version by promoting it.
+
+        Args:
+            model_type: The model type (e.g. ``intent_classifier``).
+            version: The version string to rollback to.
+
+        Returns:
+            True if the rollback succeeded, False otherwise.
+        """
+        return self.registry.rollback(model_type, version) is not None
+
+    def get_version_history(self, model_type: str) -> list[dict]:
+        """Get version history for a model type.
+
+        Returns:
+            List of ``ModelMetadata.to_dict()`` entries sorted by creation
+            date (newest first).
+        """
+        models = self.registry.list_models(model_type=model_type)
+        return [m.to_dict() for m in models]
+
+    # ── Dataset quality assessment ──────────────────────────────────────
+
+    def assess_dataset_quality(self, dataset: TrainingDataset) -> DatasetQualityInfo:
+        """Inspect a dataset and return structured quality information.
+
+        Computes total / unique / duplicate counts, average confidence,
+        label distribution, and suggested improvement actions.
+        """
+        total = len(dataset)
+        if total == 0:
+            return DatasetQualityInfo(
+                suggested_actions=["collect more training examples"],
+            )
+
+        deduped = dataset.deduplicate()
+        unique = len(deduped)
+        duplicate_count = total - unique
+
+        scores = [ex.quality_score for ex in dataset.examples if hasattr(ex, "quality_score")]
+        avg_conf = sum(scores) / len(scores) if scores else 0.0
+
+        label_dist: dict[str, int] = {}
+        for ex in dataset.examples:
+            label = ex.category or "unknown"
+            label_dist[label] = label_dist.get(label, 0) + 1
+
+        actions: list[str] = []
+        if duplicate_count > total * 0.1:
+            actions.append("deduplicate dataset (duplicate rate > 10%)")
+        if avg_conf < 0.5:
+            actions.append("improve example quality (avg confidence < 0.5)")
+        if len(label_dist) < 3:
+            actions.append("increase category diversity")
+
+        return DatasetQualityInfo(
+            total_examples=total,
+            unique_examples=unique,
+            duplicate_count=duplicate_count,
+            avg_confidence=round(avg_conf, 4),
+            label_distribution=label_dist,
+            suggested_actions=actions,
+        )
+
+    # ── Learning event recording ────────────────────────────────────────
+
+    def record_learning_event(
+        self,
+        event_type: str,
+        category: str,
+        summary: str,
+        details: dict | None = None,
+    ) -> LearningEvent | None:
+        """Persist a ``LearningEvent`` record to the database.
+
+        Args:
+            event_type: High-level type (e.g. ``auto_improvement``).
+            category: Sub-category (e.g. ``system``, ``skill``).
+            summary: Human-readable summary of the event.
+            details: Optional structured dict with additional context.
+
+        Returns:
+            The persisted ``LearningEvent`` or None on failure.
+        """
+        import json as _json
+
+        try:
+            with sync_session_scope() as session:
+                event = LearningEvent(
+                    public_id=str(uuid4()),
+                    event_type=event_type,
+                    category=category,
+                    summary=summary,
+                    details_json=_json.dumps(details or {}),
+                )
+                session.add(event)
+                session.flush()
+                session.refresh(event)
+                logger.info(
+                    "recorded learning event: %s/%s — %s",
+                    event_type, category, summary,
+                )
+                return event
+        except Exception as e:
+            logger.warning("failed to record learning event: %s", e)
+            return None
 
     def promote_if_better(
         self,

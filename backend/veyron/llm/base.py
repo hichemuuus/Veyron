@@ -88,6 +88,10 @@ class LLMUnavailableError(RuntimeError):
     """Raised when the configured provider can't be reached."""
 
 
+class LLMRetryableError(LLMUnavailableError):
+    """Transient error that should be retried (connection issues, 5xx, etc.)."""
+
+
 class FallbackProvider(LLMProvider):
     """Wraps a primary provider with an optional remote fallback.
 

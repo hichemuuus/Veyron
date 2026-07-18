@@ -256,7 +256,7 @@ class TestInference:
             "conversation",
         ]
         assert 0.0 <= result.confidence <= 1.0
-        assert result.model_used == "fallback"  # No trained model available
+        assert result.model_used == "micro_model"
 
     def test_classify_fallback_system_management(self):
         reset_model()
@@ -268,7 +268,9 @@ class TestInference:
         result = classify_intent("List all files in the directory")
         assert result.category == "file_operation"
 
-    def test_classify_fallback_planning(self):
+    def test_classify_fallback_planning(self, monkeypatch):
+        from veyron.intelligence.intent import inference as intent_inference
+        monkeypatch.setattr(intent_inference, "_resolve_model_path", lambda: None)
         reset_model()
         result = classify_intent("First do this, then do that, after that finally summarize")
         assert result.category == "planning_task"

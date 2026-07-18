@@ -6,8 +6,10 @@ import logging
 import time
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
+from sqlmodel import select, delete, update, func
 from veyron.config import DATA_DIR, get_settings
 from veyron.intelligence.intent.inference import _load_model as _load_intent_model
 from veyron.intelligence.intent.inference import classify_intent
@@ -71,6 +73,87 @@ def _measure_inference_latency() -> dict:
         "intent_classifier_ms": round(sum(ic_latencies) / len(ic_latencies), 3) if ic_latencies else 0,
         "tool_selector_ms": round(sum(ts_latencies) / len(ts_latencies), 3) if ts_latencies else 0,
     }
+
+
+class ReviewCorrection(BaseModel):
+    correct_intent: str = Field(..., min_length=1, max_length=200)
+
+
+@router.get("/review_queue")
+async def review_queue() -> list[dict]:
+    """Return the last 50 prediction logs awaiting human review."""
+    from veyron.db.base import sync_session_scope
+    from veyron.db.models import PredictionLog
+
+    with sync_session_scope() as session:
+        logs = (
+            session.exec(
+                select(PredictionLog)
+                .where(PredictionLog.needs_review == True, PredictionLog.user_correction == None)
+                .order_by(PredictionLog.id.desc())
+                .limit(50)
+            )
+            .all()
+        )
+        return [
+            {
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "model_name": log.model_name,
+                "model_version": log.model_version,
+                "input_text": log.input_text,
+                "predicted_output": log.predicted_output,
+                "confidence": log.confidence,
+                "latency_ms": log.latency_ms,
+            }
+            for log in logs
+        ]
+
+
+@router.post("/review/{log_id}")
+async def submit_review(log_id: int, correction: ReviewCorrection) -> dict:
+    """Submit a human correction for a reviewed prediction log entry."""
+    from veyron.db.base import sync_session_scope
+    from veyron.db.models import PredictionLog
+
+    with sync_session_scope() as session:
+        log_entry = session.exec(select(PredictionLog).where(PredictionLog.id == log_id)).first()
+        if log_entry is None:
+            raise HTTPException(status_code=404, detail="prediction log not found")
+        log_entry.user_correction = correction.correct_intent
+        log_entry.needs_review = False
+        session.add(log_entry)
+    return {"status": "ok", "log_id": log_id, "corrected_to": correction.correct_intent}
+
+
+@router.get("/logs")
+async def prediction_logs() -> list[dict]:
+    """Return the last 50 prediction log entries in reverse chronological order."""
+    from veyron.db.base import sync_session_scope
+    from veyron.db.models import PredictionLog
+
+    with sync_session_scope() as session:
+        logs = (
+            session.exec(
+                select(PredictionLog)
+                .order_by(PredictionLog.id.desc())
+                .limit(50)
+            )
+            .all()
+        )
+        return [
+            {
+                "id": log.id,
+                "timestamp": log.timestamp.isoformat(),
+                "model_name": log.model_name,
+                "model_version": log.model_version,
+                "input_text": log.input_text,
+                "predicted_output": log.predicted_output,
+                "confidence": log.confidence,
+                "latency_ms": log.latency_ms,
+            }
+            for log in logs
+        ]
 
 
 @router.get("/metrics")

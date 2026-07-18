@@ -12,11 +12,13 @@ Falls back to a simple keyword heuristic if no trained model is available.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from veyron.config import get_settings
+from veyron.intelligence.observability import log_prediction, resolve_model_version
 from veyron.intelligence.intent.dataset import (
     CATEGORY_COMPLEXITY,
     CATEGORY_REQUIRES_PLANNING,
@@ -26,8 +28,8 @@ from veyron.intelligence.intent.model import IntentModel
 
 logger = logging.getLogger(__name__)
 
-# Default model path relative to DATA_DIR.
-DEFAULT_MODEL_PATH = "models/intent_classifier.pkl"
+# Hardcoded fallback path — only used when registry is unavailable.
+_FALLBACK_MODEL_PATH = "models/intent_classifier.pkl"
 
 # Lazy-loaded model singleton.
 _model: IntentModel | None = None
@@ -58,27 +60,56 @@ def _default_metadata(category: str) -> dict[str, Any]:
     }
 
 
+def _resolve_model_path() -> str | None:
+    """Resolve model path from the Model Registry.
+
+    Falls back to a hardcoded default if the registry is unavailable.
+    Returns None only when no model file can be found anywhere.
+    """
+    if _model_path is not None:
+        return _model_path
+
+    try:
+        from veyron.intelligence.models.registry import get_registry
+
+        registry = get_registry()
+        result = registry.get_production_model("intent_classifier")
+        if result is not None:
+            path = result["path"]
+            if Path(path).exists():
+                return path
+            logger.warning("registry points to missing model: %s", path)
+        else:
+            logger.info("no production intent_classifier in registry")
+    except Exception as e:
+        logger.error("model registry lookup failed: %s", e)
+        logger.info("falling back to hardcoded model path")
+
+    base = str(Path(get_settings().database_url.replace("sqlite:///", "")).parent / _FALLBACK_MODEL_PATH)
+    if Path(base).exists():
+        return base
+    return None
+
+
 def _load_model() -> IntentModel | None:
     """Load the intent model from disk (lazily). Returns None if unavailable."""
     global _model
     if _model is not None:
         return _model
 
-    path = _model_path or str(Path(get_settings().database_url.replace("sqlite:///", "")).parent / DEFAULT_MODEL_PATH)
-
-    model_path = Path(path)
-    if not model_path.exists():
-        logger.info("no intent model found at %s", model_path)
+    path = _resolve_model_path()
+    if path is None:
+        logger.info("no intent model found (registry + fallback exhausted)")
         return None
 
     try:
         model = IntentModel()
-        model.load(str(model_path))
+        model.load(path)
         _model = model
         logger.info("intent model loaded from %s", path)
         return model
     except Exception as e:
-        logger.warning("failed to load intent model: %s", e)
+        logger.error("failed to load intent model from %s: %s", path, e)
         return None
 
 
@@ -157,9 +188,22 @@ def classify_intent(text: str, model_path: str | None = None) -> ClassifierResul
     model = _load_model()
 
     if model is not None and model.fitted:
+        start = time.perf_counter()
         category, confidence = model.predict_with_confidence(text)
         all_probs = model.predict_proba(text)
+        latency_ms = (time.perf_counter() - start) * 1000
         meta = _default_metadata(category)
+        try:
+            log_prediction(
+                model_name="intent_classifier",
+                model_version=resolve_model_version("intent_classifier"),
+                input_text=text,
+                predicted_output=category,
+                confidence=confidence,
+                latency_ms=latency_ms,
+            )
+        except Exception:
+            pass
         return ClassifierResult(
             category=category,
             confidence=confidence,

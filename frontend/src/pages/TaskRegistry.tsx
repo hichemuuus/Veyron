@@ -47,7 +47,7 @@ export function TaskRegistryPage() {
         </div>
         <button
           onClick={reload}
-          className="focus-ring rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-50"
+          className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-3.5 py-2 text-xs font-medium text-ink-400 transition-colors hover:bg-ink-200"
         >
           ↻ Refresh
         </button>
@@ -69,13 +69,13 @@ export function TaskRegistryPage() {
 
       {/* filters */}
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-white p-0.5">
+        <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-ink-200/40 p-0.5">
           {(['all', 'react', 'plan'] as ModeFilter[]).map((m) => (
             <button
               key={m}
               onClick={() => setModeFilter(m)}
               className={`focus-ring rounded-md px-2.5 py-1 text-[11px] font-medium uppercase transition-colors ${
-                modeFilter === m ? 'bg-sig-500/15 text-sig-700' : 'text-ink-500 hover:text-ink-800'
+                modeFilter === m ? 'bg-sig-500/15 text-sig-700' : 'text-ink-500 hover:bg-ink-100/60 hover:text-ink-700'
               }`}
             >
               {m}
@@ -85,7 +85,7 @@ export function TaskRegistryPage() {
         {statusFilter !== 'all' ? (
           <button
             onClick={() => setStatusFilter('all')}
-            className="focus-ring rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink-600 transition-colors hover:bg-ink-50"
+            className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-2.5 py-1.5 text-[11px] font-medium text-ink-500 transition-colors hover:bg-ink-200"
           >
             Clear: {statusInfo(statusFilter).label} ×
           </button>
@@ -146,7 +146,7 @@ function FilterChip({
       className={`focus-ring flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-all ${
         active
           ? 'border-sig-500/40 bg-sig-50 shadow-soft'
-          : 'border-ink-200/70 bg-white hover:border-ink-300 hover:bg-ink-50/50'
+          : 'border-ink-200/70 bg-ink-100 hover:border-ink-300 hover:bg-ink-200'
       }`}
     >
       <span className="hud-label">{label}</span>

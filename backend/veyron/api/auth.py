@@ -1,17 +1,33 @@
-"""Authentication dependencies.
+"""Authentication dependencies and helpers.
 
-Placeholder for future auth integration. Currently allows all requests.
-Replace with real JWT/OAuth verification when auth is implemented.
+Provides the `verify_token` helper for middleware use, plus FastAPI dependency
+injection helpers (`get_current_user`, `require_auth`) for route-level auth.
 """
 
 from __future__ import annotations
+
+import hmac
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from veyron.api.schemas import AuthToken
+from veyron.config import get_settings
 
 _security = HTTPBearer(auto_error=False)
+
+
+def verify_token(token: str) -> bool:
+    """Check a bearer token against the configured api_auth_token.
+
+    Uses constant-time comparison to avoid timing side-channels.
+    Returns True if the token is valid or if auth is disabled (token is None).
+    """
+    settings = get_settings()
+    expected = settings.server.api_auth_token
+    if expected is None:
+        return True
+    return hmac.compare_digest(token, expected)
 
 
 async def get_current_user(
@@ -24,7 +40,6 @@ async def get_current_user(
     """
     if credentials is None:
         return AuthToken(sub="anonymous", scopes=[])
-    # Future: validate credentials.credentials (JWT, API key, etc.)
     return AuthToken(sub=credentials.credentials[:16], scopes=[])
 
 
@@ -40,5 +55,4 @@ async def require_auth(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required",
         )
-    # Future: validate credentials.credentials
     return AuthToken(sub=credentials.credentials[:16], scopes=[])

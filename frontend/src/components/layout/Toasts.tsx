@@ -1,7 +1,7 @@
 import { useAppStore } from '../../stores/appStore'
 
 const TONE: Record<string, string> = {
-  info: 'border-sig-400/30 bg-white text-ink-800',
+  info: 'border-sig-400/30 bg-ink-100 text-ink-700',
   ok: 'border-ok-500/30 bg-ok-500/8 text-ink-800',
   warn: 'border-warn-500/40 bg-warn-500/8 text-ink-800',
   fail: 'border-bad-500/40 bg-bad-500/8 text-ink-800',
@@ -31,13 +31,13 @@ export function Toasts() {
       {toasts.map((t) => (
         <div
           key={t.id}
-          className={`pointer-events-auto animate-riseIn rounded-xl border bg-white px-3.5 py-2.5 text-xs shadow-card-lg ${TONE[t.tone]}`}
+          className={`pointer-events-auto animate-riseIn rounded-xl border bg-ink-100 px-3.5 py-2.5 text-xs shadow-card-lg ${TONE[t.tone]}`}
         >
           <div className="flex items-start gap-2.5">
             <span className={`mt-0.5 font-mono font-medium ${ICON_TONE[t.tone]}`}>
               {ICON[t.tone]}
             </span>
-            <span className="flex-1 leading-relaxed">{t.message}</span>
+            <span className="text-wrap-safe flex-1 leading-relaxed">{t.message}</span>
             <button
               onClick={() => dismiss(t.id)}
               className="text-ink-400 transition-colors hover:text-ink-700"

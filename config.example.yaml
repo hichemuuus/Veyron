@@ -32,4 +32,6 @@ environment: dev  # dev | prod
 #   host: "127.0.0.1"
 #   port: 8000
 #   cors_origins:
-#     - "http://localhost:5173"
+#     - "http://localhost:5173"      # Vite dev server
+#     - "tauri://localhost"           # Tauri desktop (release)
+#     - "https://tauri.localhost"     # Tauri desktop (release, alt)

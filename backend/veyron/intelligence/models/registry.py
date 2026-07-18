@@ -102,6 +102,21 @@ class ModelRegistry:
                 return md
         return None
 
+    def get_production_model(self, name: str) -> dict[str, Any] | None:
+        """Return path and metadata for the production model with the given name.
+
+        Args:
+            name: Model type name (e.g. ``"intent_classifier"``, ``"tool_selector"``).
+
+        Returns:
+            Dict with ``"path"`` and ``"metadata"`` keys, or None if no
+            production model is registered.
+        """
+        md = self.get_production(name)
+        if md is None:
+            return None
+        return {"path": md.path, "metadata": md.to_dict()}
+
     def get(self, model_type: str, version: str) -> ModelMetadata | None:
         return self._models.get(model_type, {}).get(version)
 
@@ -132,11 +147,6 @@ class ModelRegistry:
             elif model_type == "tool_selector":
                 from veyron.intelligence.tool_selector.model import ToolSelectorModel
                 model = ToolSelectorModel()
-                model.load(str(path))
-                return model
-            elif model_type == "parameter_extraction":
-                from veyron.intelligence.parameter_extraction.model import ParameterExtractionModel
-                model = ParameterExtractionModel()
                 model.load(str(path))
                 return model
             elif model_type == "memory_retrieval":

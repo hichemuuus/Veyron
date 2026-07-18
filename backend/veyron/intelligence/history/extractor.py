@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from veyron.config import DATA_DIR
+from sqlmodel import select, delete, update, func
 from veyron.db.base import sync_session_scope
 from veyron.db.models import EvaluationMetric, ExecutionStep, Task, ToolInvocation
 from veyron.intelligence.intent.dataset import IntentDataset
@@ -55,9 +56,9 @@ class HistoryExtractor:
         try:
             with sync_session_scope() as session:
                 tasks = (
-                    session.query(Task)
-                    .order_by(Task.created_at.desc())
-                    .limit(limit)
+                    session.exec(
+                        select(Task).order_by(Task.created_at.desc()).limit(limit)
+                    )
                     .all()
                 )
 
@@ -67,9 +68,11 @@ class HistoryExtractor:
 
                     # Get steps for this task.
                     steps = (
-                        session.query(ExecutionStep)
-                        .filter(ExecutionStep.task_public_id == task.public_id)
-                        .order_by(ExecutionStep.step_index)
+                        session.exec(
+                            select(ExecutionStep)
+                            .where(ExecutionStep.task_public_id == task.public_id)
+                            .order_by(ExecutionStep.step_index)
+                        )
                         .all()
                     )
 
@@ -117,9 +120,9 @@ class HistoryExtractor:
         try:
             with sync_session_scope() as session:
                 results = (
-                    session.query(EvaluationMetric)
-                    .order_by(EvaluationMetric.created_at.desc())
-                    .limit(limit)
+                    session.exec(
+                        select(EvaluationMetric).order_by(EvaluationMetric.created_at.desc()).limit(limit)
+                    )
                     .all()
                 )
 
@@ -164,9 +167,9 @@ class HistoryExtractor:
         try:
             with sync_session_scope() as session:
                 invocations = (
-                    session.query(ToolInvocation)
-                    .order_by(ToolInvocation.created_at.desc())
-                    .limit(limit)
+                    session.exec(
+                        select(ToolInvocation).order_by(ToolInvocation.created_at.desc()).limit(limit)
+                    )
                     .all()
                 )
 

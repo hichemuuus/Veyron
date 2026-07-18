@@ -4,6 +4,7 @@ Records every step (iterations, tool calls, LLM calls, plan steps) to the
 database so runs can be audited, debugged, and resumed after interruption.
 
 Publishes `tracker.*` events on the bus for live UI updates.
+Uses async DB sessions to avoid blocking the event loop.
 """
 
 from __future__ import annotations
@@ -13,8 +14,10 @@ import logging
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlalchemy import select
+
 from veyron.core.events import EventBus, get_bus
-from veyron.db.base import sync_session_scope
+from veyron.db.base import async_session_scope
 from veyron.db.models import (
     ExecutionStep,
     StepStatus,
@@ -34,7 +37,7 @@ def _utcnow() -> datetime:
 class ExecutionTracker:
     """Records and queries execution steps for agent tasks.
 
-    Designed for injection into Agent and Planner. Uses sync DB writes.
+    All DB-bound methods are async to avoid blocking the event loop.
     """
 
     def __init__(self, bus: EventBus | None = None) -> None:
@@ -42,7 +45,7 @@ class ExecutionTracker:
 
     # ── Task lifecycle ─────────────────────────────────────────────────────
 
-    def start_task(
+    async def start_task(
         self,
         task_public_id: str,
         request: str,
@@ -50,8 +53,9 @@ class ExecutionTracker:
         model_used: str | None = None,
     ) -> None:
         """Record a task as started. Called when execution begins."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result.scalar_one_or_none()
             if task is None:
                 logger.warning("tracker.start_task: task %s not found, creating", task_public_id)
                 task = Task(public_id=task_public_id, request=request[:500], mode=mode)
@@ -61,17 +65,17 @@ class ExecutionTracker:
             task.mode = mode
             if model_used:
                 task.model_used = model_used
-            session.add(task)
 
-    def complete_task(
+    async def complete_task(
         self,
         task_public_id: str,
         result: str | None = None,
         error: str | None = None,
     ) -> None:
         """Record task completion or failure."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
             if task is None:
                 logger.warning("tracker.complete_task: task %s not found", task_public_id)
                 return
@@ -86,15 +90,16 @@ class ExecutionTracker:
                 if result:
                     task.result = result
 
-    def set_task_status(
+    async def set_task_status(
         self,
         task_public_id: str,
         status: TaskStatus,
         error: str | None = None,
     ) -> None:
         """Update the task status field."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
             if task is None:
                 logger.warning("tracker.set_task_status: task %s not found", task_public_id)
                 return
@@ -105,7 +110,7 @@ class ExecutionTracker:
 
     # ── Step recording ─────────────────────────────────────────────────────
 
-    def start_step(
+    async def start_step(
         self,
         task_public_id: str,
         step_type: TaskType,
@@ -115,7 +120,7 @@ class ExecutionTracker:
         metadata: dict[str, Any] | None = None,
     ) -> int | None:
         """Record the start of an execution step. Returns the step id."""
-        with sync_session_scope() as session:
+        async with async_session_scope() as session:
             step = ExecutionStep(
                 task_public_id=task_public_id,
                 step_index=step_index,
@@ -126,19 +131,20 @@ class ExecutionTracker:
                 metadata_json=json.dumps(metadata or {}, default=str),
             )
             session.add(step)
-            session.flush()
+            await session.flush()
             step_id: int | None = step.id
             return step_id
 
-    def complete_step(
+    async def complete_step(
         self,
         step_id: int,
         output_preview: str = "",
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """Mark a step as successfully completed."""
-        with sync_session_scope() as session:
-            step = session.query(ExecutionStep).filter(ExecutionStep.id == step_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(ExecutionStep).where(ExecutionStep.id == step_id))
+            step = result_.scalar_one_or_none()
             if step is None:
                 logger.warning("tracker.complete_step: step %s not found", step_id)
                 return
@@ -150,7 +156,7 @@ class ExecutionTracker:
             if metadata:
                 step.metadata_json = json.dumps(metadata, default=str)
 
-    def fail_step(
+    async def fail_step(
         self,
         step_id: int,
         error: str,
@@ -158,8 +164,9 @@ class ExecutionTracker:
         metadata: dict[str, Any] | None = None,
     ) -> None:
         """Mark a step as failed."""
-        with sync_session_scope() as session:
-            step = session.query(ExecutionStep).filter(ExecutionStep.id == step_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(ExecutionStep).where(ExecutionStep.id == step_id))
+            step = result_.scalar_one_or_none()
             if step is None:
                 logger.warning("tracker.fail_step: step %s not found", step_id)
                 return
@@ -172,14 +179,15 @@ class ExecutionTracker:
             if metadata:
                 step.metadata_json = json.dumps(metadata, default=str)
 
-    def skip_step(
+    async def skip_step(
         self,
         step_id: int,
         reason: str | None = None,
     ) -> None:
         """Mark a step as skipped."""
-        with sync_session_scope() as session:
-            step = session.query(ExecutionStep).filter(ExecutionStep.id == step_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(ExecutionStep).where(ExecutionStep.id == step_id))
+            step = result_.scalar_one_or_none()
             if step is None:
                 return
             now = _utcnow()
@@ -191,15 +199,16 @@ class ExecutionTracker:
 
     # ── Checkpoints ────────────────────────────────────────────────────────
 
-    def save_checkpoint(
+    async def save_checkpoint(
         self,
         task_public_id: str,
         checkpoint_data: str,
         step_index: int,
     ) -> None:
         """Persist a checkpoint so the task can be resumed after restart."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
             if task is None:
                 logger.warning("tracker.save_checkpoint: task %s not found", task_public_id)
                 return
@@ -207,30 +216,31 @@ class ExecutionTracker:
             task.checkpoint_step = step_index
             task.updated_at = _utcnow()
 
-    def load_checkpoint(self, task_public_id: str) -> tuple[str | None, int]:
+    async def load_checkpoint(self, task_public_id: str) -> tuple[str | None, int]:
         """Load the last checkpoint. Returns (checkpoint_data, step_index)."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
             if task is None or not task.checkpoint_data:
                 return None, 0
             return task.checkpoint_data, task.checkpoint_step
 
     # ── Queries ─────────────────────────────────────────────────────────────
 
-    def get_timeline(
+    async def get_timeline(
         self,
         task_public_id: str,
         limit: int = 200,
     ) -> list[dict[str, Any]]:
         """Return ordered execution steps as dicts."""
-        with sync_session_scope() as session:
-            steps = (
-                session.query(ExecutionStep)
-                .filter(ExecutionStep.task_public_id == task_public_id)
+        async with async_session_scope() as session:
+            result_ = await session.execute(
+                select(ExecutionStep)
+                .where(ExecutionStep.task_public_id == task_public_id)
                 .order_by(ExecutionStep.step_index)
                 .limit(limit)
-                .all()
             )
+            steps = result_.scalars().all()
             return [
                 {
                     "id": s.id,
@@ -247,17 +257,18 @@ class ExecutionTracker:
                 for s in steps
             ]
 
-    def get_task_summary(self, task_public_id: str) -> dict[str, Any]:
+    async def get_task_summary(self, task_public_id: str) -> dict[str, Any]:
         """Return aggregated execution stats for a task."""
-        steps = self.get_timeline(task_public_id)
+        steps = await self.get_timeline(task_public_id)
         total = len(steps)
         completed = sum(1 for s in steps if s["status"] == "completed")
         failed = sum(1 for s in steps if s["status"] == "failed")
         skipped = sum(1 for s in steps if s["status"] == "skipped")
         total_duration = sum(s["duration_ms"] for s in steps if s["duration_ms"])
 
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
 
         return {
             "task_public_id": task_public_id,
@@ -271,18 +282,20 @@ class ExecutionTracker:
             "status": task.status.value if task else "unknown",
         }
 
-    def increment_tool_count(self, task_public_id: str) -> None:
+    async def increment_tool_count(self, task_public_id: str) -> None:
         """Increment the tool usage counter for a task."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
             if task:
                 task.tool_count = (task.tool_count or 0) + 1
                 task.updated_at = _utcnow()
 
-    def increment_retry_count(self, task_public_id: str) -> None:
+    async def increment_retry_count(self, task_public_id: str) -> None:
         """Increment the retry counter for a task."""
-        with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == task_public_id).first()
+        async with async_session_scope() as session:
+            result_ = await session.execute(select(Task).where(Task.public_id == task_public_id))
+            task = result_.scalar_one_or_none()
             if task:
                 task.retry_count = (task.retry_count or 0) + 1
                 task.updated_at = _utcnow()

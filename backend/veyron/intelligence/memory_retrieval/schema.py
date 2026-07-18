@@ -6,11 +6,10 @@ most relevant. The model learns vocabulary and IDF weights over a corpus of
 memory texts via TF-IDF, then ranks candidates by cosine similarity to the
 query.
 
-This package mirrors the structure of ``parameter_extraction`` — the model,
-trainer, evaluator, and inference singleton all follow the same conventions —
-with one adaptation: because retrieval is inherently rank-based, evaluation
-uses precision@k, recall@k, and mean reciprocal rank (MRR) instead of exact
-match.
+The model, trainer, evaluator, and inference singleton follow the standard
+micro-model conventions with one adaptation: because retrieval is inherently
+rank-based, evaluation uses precision@k, recall@k, and mean reciprocal rank
+(MRR) instead of exact match.
 """
 
 from __future__ import annotations

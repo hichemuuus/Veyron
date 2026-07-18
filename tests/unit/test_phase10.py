@@ -16,6 +16,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from unittest.mock import MagicMock, patch
+
 from veyron.intelligence.models.registry import ModelRegistry, get_registry, reset_registry
 from veyron.intelligence.models.schema import (
     STATUS_CANDIDATE,
@@ -486,3 +488,119 @@ class TestRegistrySingleton:
     def test_registry_path_custom(self, temp_registry_path: Path):
         r = ModelRegistry(registry_path=temp_registry_path)
         assert r.registry_path == temp_registry_path
+
+
+# ─── Auto-promotion Tests ──────────────────────────────────────────────────
+
+class TestAutoPromotion:
+    """Tests for _auto_promote_model in run_training.py."""
+
+    @patch("veyron.intelligence.training.run_training.mlflow")
+    def test_promotes_when_no_production(self, mock_mlflow, registry, temp_registry_path, monkeypatch):
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_registry", lambda: registry)
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_settings", lambda: MagicMock(model=MagicMock(auto_promote_models=True)))
+
+        from veyron.intelligence.training.run_training import _auto_promote_model
+
+        _auto_promote_model(
+            model_type="intent_classifier",
+            model_name="intent_classifier",
+            version="v2.0.0-test",
+            path="/fake/model.pkl",
+            metrics={"accuracy": 0.95, "macro_f1": 0.94},
+            primary_metric="macro_f1",
+        )
+
+        prod = registry.get_production("intent_classifier")
+        assert prod is not None
+        assert prod.version == "v2.0.0-test"
+        assert prod.status == STATUS_PRODUCTION
+        mock_mlflow.log_metric.assert_any_call("promoted_to_production", 1)
+
+    @patch("veyron.intelligence.training.run_training.mlflow")
+    def test_promotes_when_better(self, mock_mlflow, registry, temp_registry_path, monkeypatch):
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_registry", lambda: registry)
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_settings", lambda: MagicMock(model=MagicMock(auto_promote_models=True)))
+
+        # Register existing production model with macro_f1=0.90
+        registry.register(ModelMetadata(
+            name="intent_classifier",
+            version="v1.0.0",
+            model_type="intent_classifier",
+            metrics={"accuracy": 0.88, "macro_f1": 0.90},
+            path="/old/model.pkl",
+            status=STATUS_CANDIDATE,
+        ))
+        registry.promote("intent_classifier", "v1.0.0")
+
+        from veyron.intelligence.training.run_training import _auto_promote_model
+
+        _auto_promote_model(
+            model_type="intent_classifier",
+            model_name="intent_classifier",
+            version="v2.0.0-better",
+            path="/new/model.pkl",
+            metrics={"accuracy": 0.96, "macro_f1": 0.95},  # 0.95 > 0.90 + 0.01
+            primary_metric="macro_f1",
+        )
+
+        prod = registry.get_production("intent_classifier")
+        assert prod is not None
+        assert prod.version == "v2.0.0-better"
+        mock_mlflow.log_metric.assert_any_call("promoted_to_production", 1)
+
+    @patch("veyron.intelligence.training.run_training.mlflow")
+    def test_does_not_promote_when_worse(self, mock_mlflow, registry, temp_registry_path, monkeypatch):
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_registry", lambda: registry)
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_settings", lambda: MagicMock(model=MagicMock(auto_promote_models=True)))
+
+        # Register existing production model with macro_f1=0.95
+        registry.register(ModelMetadata(
+            name="intent_classifier",
+            version="v1.0.0",
+            model_type="intent_classifier",
+            metrics={"accuracy": 0.96, "macro_f1": 0.95},
+            path="/old/model.pkl",
+            status=STATUS_CANDIDATE,
+        ))
+        registry.promote("intent_classifier", "v1.0.0")
+
+        from veyron.intelligence.training.run_training import _auto_promote_model
+
+        _auto_promote_model(
+            model_type="intent_classifier",
+            model_name="intent_classifier",
+            version="v2.0.0-worse",
+            path="/new/model.pkl",
+            metrics={"accuracy": 0.90, "macro_f1": 0.88},  # 0.88 < 0.95 + 0.01
+            primary_metric="macro_f1",
+        )
+
+        prod = registry.get_production("intent_classifier")
+        assert prod is not None
+        assert prod.version == "v1.0.0"  # still the old one
+
+        # The new model should still be registered as candidate
+        candidate = registry.get("intent_classifier", "v2.0.0-worse")
+        assert candidate is not None
+        assert candidate.status == STATUS_CANDIDATE
+        mock_mlflow.log_metric.assert_any_call("promoted_to_production", 0)
+
+    @patch("veyron.intelligence.training.run_training.mlflow")
+    def test_skips_when_disabled(self, mock_mlflow, registry, temp_registry_path, monkeypatch):
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_registry", lambda: registry)
+        monkeypatch.setattr("veyron.intelligence.training.run_training.get_settings", lambda: MagicMock(model=MagicMock(auto_promote_models=False)))
+
+        from veyron.intelligence.training.run_training import _auto_promote_model
+
+        _auto_promote_model(
+            model_type="intent_classifier",
+            model_name="intent_classifier",
+            version="v2.0.0-skip",
+            path="/fake/model.pkl",
+            metrics={"accuracy": 0.95, "macro_f1": 0.94},
+            primary_metric="macro_f1",
+        )
+
+        assert registry.get_production("intent_classifier") is None
+        mock_mlflow.log_metric.assert_any_call("auto_promote_skipped", 1)

@@ -7,8 +7,8 @@ This package provides:
   - MemoryRetrievalEvaluator: rank-aware evaluation (precision@k, recall@k, MRR)
   - MemoryRetrievalDataset: dataset container + synthetic generator
 
-Follows the same conventions as ``parameter_extraction``: singleton inference,
-pickle persistence, graceful empty fallback, and the ``evaluate_model(model,
+Follows the standard micro-model conventions: singleton inference, pickle
+persistence, graceful empty fallback, and the ``evaluate_model(model,
 test_cases)`` contract expected by the Phase 11.5 benchmark.
 """
 

@@ -108,6 +108,16 @@ body {
   font-feature-settings: 'tnum';
 }
 
+/* Overflow-safe text wrapping — use on any element that may contain long
+   unbroken strings (UUIDs, URLs, file paths, JSON, error messages). */
+.text-wrap-safe {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+.text-break-all {
+  word-break: break-all;
+}
+
 /* Warm scrollbar — tuned for dark surface */
 *::-webkit-scrollbar {
   width: 10px;

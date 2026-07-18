@@ -71,7 +71,7 @@ export function ToolCallCard({ call }: { call: ToolCall }) {
               {argKeys.slice(0, 4).map((k) => (
                 <span
                   key={k}
-                  className="rounded-md border border-ink-200 bg-white px-1.5 py-0.5 font-mono text-[10px] text-ink-500"
+                  className="rounded-md border border-ink-200 bg-ink-100 px-1.5 py-0.5 font-mono text-[10px] text-ink-500"
                 >
                   {k}
                 </span>

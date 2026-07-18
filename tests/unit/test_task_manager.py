@@ -47,8 +47,9 @@ class TestTaskManager:
         mgr.create_task("task a")
         pid_b = mgr.create_task("task b")
         # Change status of task b.
+        from sqlmodel import select
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == pid_b).first()
+            task = session.exec(select(Task).where(Task.public_id == pid_b)).first()
             task.status = TaskStatus.RUNNING
             session.add(task)
 
@@ -62,8 +63,9 @@ class TestTaskManager:
         mgr = get_task_manager()
         pid = mgr.create_task("to cancel")
         # Set to running so it can be cancelled.
+        from sqlmodel import select
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == pid).first()
+            task = session.exec(select(Task).where(Task.public_id == pid)).first()
             task.status = TaskStatus.RUNNING
             session.add(task)
 
@@ -79,8 +81,9 @@ class TestTaskManager:
     def test_pause_and_resume(self, fresh_db):
         mgr = get_task_manager()
         pid = mgr.create_task("to pause")
+        from sqlmodel import select
         with sync_session_scope() as session:
-            task = session.query(Task).filter(Task.public_id == pid).first()
+            task = session.exec(select(Task).where(Task.public_id == pid)).first()
             task.status = TaskStatus.RUNNING
             session.add(task)
 

@@ -125,7 +125,7 @@ export function MemoryCenterPage() {
         </div>
         <button
           onClick={() => Promise.all([loadMemories(), loadStats()])}
-          className="focus-ring rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-50"
+          className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-3.5 py-2 text-xs font-medium text-ink-400 transition-colors hover:bg-ink-200"
         >
           ↻ Refresh
         </button>
@@ -157,6 +157,7 @@ export function MemoryCenterPage() {
           label="Categories"
           value={loadingStats ? '—' : Object.keys(stats?.by_category ?? {}).length}
           sub={stats ? Object.entries(stats.by_category).map(([k, v]) => `${k}:${v}`).join(' · ') : undefined}
+          tone="default"
         />
       </section>
 
@@ -167,22 +168,22 @@ export function MemoryCenterPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search memory…"
-            className="focus-ring h-10 flex-1 rounded-lg border border-ink-200 bg-ink-50/50 px-3.5 text-sm text-ink-900 placeholder:text-ink-400"
+            className="focus-ring h-10 flex-1 rounded-lg border border-ink-200 bg-ink-100/50 px-3.5 text-sm text-ink-900 placeholder:text-ink-400"
           />
-          <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-white p-0.5">
+          <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-ink-200/40 p-0.5">
             {CATEGORIES.map((c) => (
               <button
                 key={c}
                 onClick={() => setCategory(c)}
                 className={`focus-ring rounded-md px-2.5 py-1 text-[11px] font-medium uppercase transition-colors ${
-                  category === c ? 'bg-sig-500/15 text-sig-700' : 'text-ink-500 hover:text-ink-800'
+                  category === c ? 'bg-sig-500/15 text-sig-700' : 'text-ink-500 hover:bg-ink-100/60 hover:text-ink-700'
                 }`}
               >
                 {c}
               </button>
             ))}
           </div>
-          <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-white p-0.5">
+          <div className="flex items-center gap-1 rounded-lg border border-ink-200 bg-ink-200/40 p-0.5">
             {IMPORTANCE_FILTERS.map((f) => (
               <button
                 key={f.label}
@@ -190,7 +191,7 @@ export function MemoryCenterPage() {
                 className={`focus-ring rounded-md px-2.5 py-1 text-[11px] font-medium uppercase transition-colors ${
                   importance === f.label
                     ? 'bg-violet-500/15 text-violet-600'
-                    : 'text-ink-500 hover:text-ink-800'
+                    : 'text-ink-500 hover:bg-ink-100/60 hover:text-ink-700'
                 }`}
               >
                 {f.label}
@@ -368,7 +369,7 @@ function MemoryCard({
             .map((t) => (
               <span
                 key={t}
-                className="rounded-md border border-ink-200 bg-ink-50 px-1.5 py-0.5 text-[10px] text-ink-500"
+                className="rounded-md border border-ink-200 bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-500"
               >
                 #{t}
               </span>
@@ -422,7 +423,7 @@ function EditMemoryModal({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             rows={8}
-            className="focus-ring mt-1.5 w-full resize-y rounded-lg border border-ink-200 bg-ink-50/50 p-3 text-sm leading-relaxed text-ink-900"
+            className="focus-ring mt-1.5 w-full resize-y rounded-lg border border-ink-200 bg-ink-100/50 p-3 text-sm leading-relaxed text-ink-900"
           />
         </div>
 
@@ -450,7 +451,7 @@ function EditMemoryModal({
               value={tags}
               onChange={(e) => setTags(e.target.value)}
               placeholder="tag1, tag2"
-              className="focus-ring mt-1.5 w-full rounded-lg border border-ink-200 bg-ink-50/50 px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400"
+              className="focus-ring mt-1.5 w-full rounded-lg border border-ink-200 bg-ink-100/50 px-3 py-2 text-sm text-ink-900 placeholder:text-ink-400"
             />
           </div>
         </div>

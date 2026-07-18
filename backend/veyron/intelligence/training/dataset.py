@@ -16,9 +16,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from veyron.config import DATA_DIR
+
 logger = logging.getLogger(__name__)
 
 USER_INTERACTIONS_DIR = Path(__file__).resolve().parents[4] / "data" / "training" / "user_interactions"
+TRAIN_DATA_PATH = DATA_DIR / "training" / "train.jsonl"
+TEST_DATA_PATH = DATA_DIR / "training" / "test.jsonl"
+SYNTHETIC_SOURCE = DATA_DIR / "training" / "synthetic_training_data.jsonl"
 
 
 @dataclass
@@ -213,6 +218,42 @@ def user_interactions_to_dataset(
     return dataset
 
 
+def prepare_holdout_split(
+    source_path: str | Path | None = None,
+    train_ratio: float = 0.8,
+    seed: int = 42,
+) -> tuple[Path, Path]:
+    """Load source data, perform a stratified 80/20 split, persist train/test.
+
+    Args:
+        source_path: Path to the full JSONL dataset. Defaults to synthetic data.
+        train_ratio: Fraction of examples to assign to training.
+        seed: Random seed for reproducibility.
+
+    Returns:
+        (train_path, test_path) to the persisted split files.
+    """
+    path = Path(source_path) if source_path else SYNTHETIC_SOURCE
+    if not path.is_file():
+        raise FileNotFoundError(f"Source dataset not found at {path}")
+
+    from veyron.intelligence.training.preparation.splitter import DatasetSplitter, load_jsonl_as_examples
+
+    logger.info("Loading full dataset from %s for holdout split", path)
+    dataset = load_jsonl_as_examples(str(path))
+    splitter = DatasetSplitter()
+    train_ds, test_ds = splitter.stratified_split(dataset, train_ratio=train_ratio, seed=seed)
+
+    train_path = train_ds.to_jsonl(TRAIN_DATA_PATH)
+    test_path = test_ds.to_jsonl(TEST_DATA_PATH)
+
+    logger.info("Holdout split: %d training, %d test examples", len(train_ds), len(test_ds))
+    logger.info("  Train: %s", train_path)
+    logger.info("  Test:  %s", test_path)
+
+    return Path(train_path), Path(test_path)
+
+
 class TrainingDataset:
     def __init__(self, examples: list[TrainingExample] | None = None) -> None:
         self.examples: list[TrainingExample] = examples or []
@@ -314,3 +355,110 @@ class TrainingDataset:
                 if line:
                     examples.append(TrainingExample.from_dict(json.loads(line)))
         return cls(examples)
+
+
+def load_real_corrections() -> list[TrainingExample]:
+    """Query the ``PredictionLog`` table for human-corrected predictions.
+
+    Returns a list of ``TrainingExample`` objects with ``source="real_correction"``
+    and ``intent`` set to the user's correction. Returns an empty list when the
+    database is unavailable or no corrections exist.
+    """
+    from sqlmodel import select
+    from veyron.db.base import sync_session_scope
+    from veyron.db.models import PredictionLog
+
+    examples: list[TrainingExample] = []
+    try:
+        with sync_session_scope() as session:
+            rows = (
+                session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.user_correction != None)
+                ).all()
+            )
+            for row in rows:
+                examples.append(TrainingExample(
+                    request=row.input_text,
+                    intent=str(row.user_correction),
+                    source="real_correction",
+                ))
+        logger.info("Loaded %d real corrections from PredictionLog", len(examples))
+    except Exception as e:
+        logger.warning("failed to load real corrections: %s", e)
+    return examples
+
+
+def merge_real_corrections(
+    synthetic: TrainingDataset,
+    corrections: list[TrainingExample],
+) -> TrainingDataset:
+    """Merge real corrections into a synthetic dataset.
+
+    When a correction shares the same ``request`` text as a synthetic example,
+    the correction **overrides** the synthetic version.  This ensures curated
+    human feedback always takes precedence.
+    """
+    by_text: dict[str, TrainingExample] = {}
+    for ex in synthetic.examples:
+        by_text[ex.request] = ex
+    for ex in corrections:
+        by_text[ex.request] = ex
+    merged = TrainingDataset(list(by_text.values()))
+    return merged.deduplicate()
+
+
+LLM_DATA_PATH = DATA_DIR / "training" / "llm_generated_intents.jsonl"
+
+
+def load_llm_generated_data(path: str | Path | None = None) -> TrainingDataset | None:
+    """Load the LLM-generated intent queries from a JSONL file.
+
+    The file is expected to contain records with ``request`` and ``intent``
+    fields, matching the format used by :func:`load_jsonl_as_examples`.
+    Returns ``None`` when the file does not exist or is empty.
+    """
+    from veyron.intelligence.training.preparation.splitter import load_jsonl_as_examples
+
+    load_path = Path(path) if path else LLM_DATA_PATH
+    if not load_path.is_file():
+        logger.info("LLM-generated data not found at %s", load_path)
+        return None
+
+    ds = load_jsonl_as_examples(str(load_path))
+    if len(ds) == 0:
+        logger.info("LLM-generated data file is empty at %s", load_path)
+        return None
+
+    # Tag every example with source="llm_generated"
+    for ex in ds.examples:
+        ex.source = "llm_generated"
+        if not ex.category:
+            ex.category = ex.intent or "general"
+
+    logger.info("Loaded %d LLM-generated examples from %s", len(ds), load_path)
+    return ds
+
+
+def merge_llm_data(
+    base: TrainingDataset,
+    llm_data: TrainingDataset | None,
+) -> TrainingDataset:
+    """Merge LLM-generated data into the base dataset (no override — additive only).
+
+    Skips any LLM example whose ``request`` text already exists in the base set.
+    """
+    if llm_data is None or len(llm_data) == 0:
+        return base
+
+    existing_requests: set[str] = {ex.request for ex in base.examples}
+    added = 0
+    for ex in llm_data.examples:
+        if ex.request not in existing_requests:
+            base.add(ex)
+            existing_requests.add(ex.request)
+            added += 1
+
+    logger.info("Merged %d/%d LLM-generated examples (skipped %d duplicates)",
+                added, len(llm_data), len(llm_data) - added)
+    return base

@@ -16,7 +16,7 @@ STATUS_DEPRECATED = "deprecated"
 class ModelMetadata:
     name: str
     version: str
-    model_type: str  # "intent_classifier" | "tool_selector" | "parameter_extraction" | "memory_retrieval" | "intent_router" | "error_recovery" | "planning"
+    model_type: str  # "intent_classifier" | "tool_selector" | "memory_retrieval" | "intent_router" | "error_recovery" | "planning"
     created_at: str = ""
     dataset_hash: str = ""
     dataset_size: int = 0

@@ -119,9 +119,9 @@ export function TaskDetailPage() {
             >
               {task.mode}
             </span>
-            <span className="data-mono text-[11px] text-ink-400">{publicId}</span>
+            <span className="text-wrap-safe data-mono max-w-[20ch] truncate text-[11px] text-ink-400" title={publicId}>{publicId}</span>
           </div>
-          <h1 className="mt-3 font-display text-xl font-medium leading-snug text-ink-900">{task.request}</h1>
+          <h1 className="text-wrap-safe mt-3 font-display text-xl font-medium leading-snug text-ink-900">{task.request}</h1>
           <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[10px] text-ink-400">
             <span>created {fmtRelative(task.created_at)}</span>
             {task.started_at ? <span>started {fmtClock(task.started_at)}</span> : null}
@@ -300,7 +300,15 @@ function StepsTable({ steps, loading }: { steps: ExecutionStep[]; loading: boole
   }
   return (
     <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-left">
+      <table className="w-full table-fixed border-collapse text-left">
+        <colgroup>
+          <col className="w-[3ch]" />
+          <col className="w-[10ch]" />
+          <col />
+          <col className="w-[12ch]" />
+          <col className="w-[10ch]" />
+          <col className="w-[14ch]" />
+        </colgroup>
         <thead>
           <tr className="hud-label border-b border-ink-200/70">
             <th className="py-2.5 pr-3 font-medium">#</th>
@@ -313,15 +321,15 @@ function StepsTable({ steps, loading }: { steps: ExecutionStep[]; loading: boole
         </thead>
         <tbody>
           {steps.map((s, i) => (
-            <tr key={`${s.id ?? i}-${s.step_index}`} className="border-b border-ink-100 text-xs transition-colors hover:bg-ink-50/50">
+            <tr key={`${s.id ?? i}-${s.step_index}`} className="border-b border-ink-100 text-xs transition-colors hover:bg-ink-100/50">
               <td className="py-2.5 pr-3 data-mono text-ink-400">{s.step_index}</td>
               <td className="py-2.5 pr-3">
-                <span className="rounded-md border border-ink-200 bg-ink-50 px-1.5 py-px font-mono text-[10px] text-ink-600">
+                <span className="rounded-md border border-ink-200 bg-ink-100 px-1.5 py-px font-mono text-[10px] text-ink-600">
                   {stepTypeLabel(s.step_type)}
                 </span>
               </td>
-              <td className="py-2.5 pr-3 font-mono text-ink-700">
-                {s.name}
+              <td className="text-wrap-safe py-2.5 pr-3 font-mono text-ink-700">
+                <span className="line-clamp-2">{s.name}</span>
                 {s.error ? (
                   <span className="mt-0.5 block truncate text-[10px] text-bad-600/80" title={s.error}>
                     {s.error}

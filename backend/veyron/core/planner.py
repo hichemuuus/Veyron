@@ -28,7 +28,7 @@ from veyron.llm.base import (
     Message,
     get_provider,
 )
-from veyron.tools.base import ToolResult
+from veyron.tools.base import ToolResult, classify_failure
 from veyron.tools.registry import get_registry
 
 
@@ -305,9 +305,27 @@ class Planner:
         """Execute steps respecting dependency order.
 
         Steps whose dependencies are all satisfied run in parallel.
+        On failure, attempts inline repair for < 3 failures; falls back to
+        full replan if 3+ steps fail in the same execution cycle.
         """
+        total_steps = len(plan.steps)
         remaining = {s.id: s for s in plan.steps}
         completed: set[str] = set()
+        failure_count = 0
+
+        # Emit initial progress event.
+        await self.bus.publish(
+            Event(
+                type="plan.progress",
+                topic=topic,
+                payload={
+                    "completed": 0,
+                    "total": total_steps,
+                    "running": [s.goal for s in plan.steps[:3]],
+                    "phase": "starting",
+                },
+            )
+        )
 
         while remaining:
             ready = [
@@ -325,15 +343,69 @@ class Planner:
                 return_exceptions=True,
             )
 
+            completed_count = len(completed)
+            await self.bus.publish(
+                Event(
+                    type="plan.progress",
+                    topic=topic,
+                    payload={
+                        "completed": completed_count,
+                        "total": total_steps,
+                        "running": [s.goal for s in ready],
+                        "phase": "executing",
+                    },
+                )
+            )
+
             for step, result in zip(ready, results):
                 if isinstance(result, Exception):
                     logger.error("step %s raised exception: %s", step.id, result)
                     step.status = "failed"
-                    step.error = str(result)
-                    await self._set_plan_error(plan, f"step {step.id} failed: {result}")
+                    step.error = f"crashed: {result}"
+                    del remaining[step.id]
+                    async with self._plan_lock:
+                        if plan.error is None:
+                            plan.error = f"step {step.id} crashed: {result}"
+                    return
                 del remaining[step.id]
                 if step.status == "completed":
                     completed.add(step.id)
+                elif step.status == "failed":
+                    failure_count += 1
+                    if failure_count >= 3:
+                        async with self._plan_lock:
+                            if plan.error is None:
+                                plan.error = f"{failure_count} steps failed, triggering full replan"
+                        return
+                    failure_category = classify_failure(step.error or "").value
+                    replacement = await self._repair_step(
+                        step, step.error or "", plan.request, failure_category
+                    )
+                    if replacement is None:
+                        async with self._plan_lock:
+                            if plan.error is None:
+                                plan.error = f"step {step.id} unrecoverable: {step.error}"
+                        return
+                    logger.info(
+                        "repairing step %s (%s) → replacement %s (%s)",
+                        step.id, step.goal, replacement.id, replacement.goal,
+                    )
+                    plan.steps.append(replacement)
+                    remaining[replacement.id] = replacement
+                    for s in plan.steps:
+                        s.depends_on = [replacement.id if d == step.id else d for d in s.depends_on]
+                    await self.bus.publish(
+                        Event(
+                            type="plan.step.repaired",
+                            topic=topic,
+                            payload={
+                                "failed_step_id": step.id,
+                                "failed_goal": step.goal,
+                                "replacement_id": replacement.id,
+                                "replacement_goal": replacement.goal,
+                            },
+                        )
+                    )
 
     async def _execute_step_wrapper(self, step: PlanStep, topic: str, plan: Plan) -> None:
         """Thin wrapper so gather() can handle each step independently."""
@@ -349,7 +421,7 @@ class Planner:
         """Execute a single step using the ReAct loop via LLM."""
         step.status = "running"
 
-        step_id = self.tracker.start_step(
+        step_id = await self.tracker.start_step(
             task_public_id=topic,
             step_type=TaskType.PLAN_STEP,
             name=step.id,
@@ -368,7 +440,7 @@ class Planner:
         for attempt in range(self.max_retries + 1):
             if attempt > 0:
                 step.retries += 1
-                self.tracker.increment_retry_count(topic)
+                await self.tracker.increment_retry_count(topic)
                 logger.info("re-trying step %s (attempt %d)", step.id, attempt + 1)
 
             step.result, step.error = await self._run_step(step.goal, topic)
@@ -382,7 +454,7 @@ class Planner:
                     )
                 )
                 if step_id is not None:
-                    self.tracker.fail_step(step_id, step.error, retry_count=step.retries)
+                    await self.tracker.fail_step(step_id, step.error, retry_count=step.retries)
                 continue
 
             vr = await self._verify(step.goal, step.result, topic)
@@ -407,7 +479,7 @@ class Planner:
         if step.verified:
             step.status = "completed"
             if step_id is not None:
-                self.tracker.complete_step(step_id, output_preview=(step.result or "")[:500])
+                await self.tracker.complete_step(step_id, output_preview=(step.result or "")[:500])
             await self.bus.publish(
                 Event(
                     type="plan.step.complete",
@@ -417,9 +489,8 @@ class Planner:
             )
         else:
             step.status = "failed"
-            await self._set_plan_error(plan, f"step {step.id} failed after {self.max_retries + 1} attempts")
             if step_id is not None:
-                self.tracker.fail_step(
+                await self.tracker.fail_step(
                     step_id,
                     step.verifier_result.evidence if step.verifier_result and not step.error else (step.error or "verification failed"),
                     retry_count=step.retries,
@@ -708,7 +779,10 @@ class Planner:
         total = len(plan.steps)
         if total == 0:
             return False
-        return failed <= total // 2
+        # Always attempt full replan if 3+ steps failed; otherwise allow if
+        # the failures are a minority of the plan so the new plan has a base
+        # of successful context to work from.
+        return failed >= 3 or failed <= total // 2
 
     async def _adaptive_replan(self, old_plan: Plan, request: str, topic: str) -> Plan:
         """Re-generate a plan incorporating context from step failures."""
@@ -780,6 +854,75 @@ class Planner:
 
         await self._execute_dag(new_plan, topic)
         return new_plan
+
+    async def _repair_step(
+        self, failed_step: PlanStep, error: str, request: str,
+        failure_category: str = "unknown",
+    ) -> PlanStep | None:
+        """Generate a single replacement step for a failed step.
+
+        Args:
+            failed_step: The step that failed.
+            error: Error message from the failure.
+            request: Original user request.
+            failure_category: Categorised failure type (timeout, invalid_input,
+                permission_denied, tool_error, unknown).
+
+        Returns a PlanStep or None if the goal is judged unachievable.
+        """
+        prompt = _REPAIR_STEP_PROMPT.format(
+            failed_goal=failed_step.goal,
+            error=error,
+            failure_category=failure_category,
+            request=request,
+            tool_list=_format_tool_list(),
+        )
+
+        messages = [
+            Message(role="system", content=build_system_prompt()),
+            Message(role="user", content=prompt),
+        ]
+
+        opts = GenerateOptions(
+            temperature=0.3,
+            max_tokens=512,
+            tools=[],
+            allow_tools=False,
+        )
+
+        text = ""
+        try:
+            async for chunk in self.provider.generate_stream(messages, opts):
+                if chunk.text:
+                    text += chunk.text
+                if chunk.done:
+                    break
+        except Exception as e:
+            logger.error("step repair LLM call failed: %s", e)
+            return None
+
+        json_match = re.search(r"\{.*\}|null", text.strip(), re.DOTALL)
+        if not json_match:
+            logger.warning("repair step: no JSON or null found in response")
+            return None
+
+        raw = json_match.group().strip()
+        if raw == "null":
+            logger.info("repair step: LLM judged goal as unachievable")
+            return None
+
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            logger.warning("repair step: invalid JSON in response")
+            return None
+
+        return PlanStep(
+            id=data.get("id", f"repair_{failed_step.id}"),
+            goal=data.get("goal", ""),
+            suggested_tool=data.get("tool") or data.get("suggested_tool"),
+            depends_on=list(failed_step.depends_on),
+        )
 
 
 def _parse_verifier_result(text: str) -> VerifierResult:
@@ -923,4 +1066,36 @@ Generate a new plan as a JSON array of step objects. Each step must have:
   - "depends_on": (optional) list of dependency step ids
 
 Avoid repeating failing approaches. Only respond with the JSON array.
+"""
+
+_REPAIR_STEP_PROMPT = """\
+A step in a plan failed. Generate a SINGLE replacement step.
+
+Failed step goal: {failed_goal}
+Error: {error}
+Failure category: {failure_category}
+
+Original request: {request}
+
+Available tools:
+{tool_list}
+
+If the goal is truly unachievable, respond with: null
+
+Otherwise respond with a single JSON object:
+  - "id": a short identifier like "repair_1"
+  - "goal": the concrete sub-goal
+  - "tool": (optional) tool name most likely needed
+
+Failure category hints:
+  - timeout: the tool or LLM timed out — simplify the goal or pick a faster tool
+  - invalid_input: wrong parameters were passed — fix the parameter values
+  - permission_denied: the tool was blocked by security — try a different approach
+  - tool_error: the tool itself failed — try an alternative tool
+  - unknown: unexpected error — try a different strategy entirely
+
+Example:
+{{"id": "repair_1", "goal": "Retry using a different tool", "tool": "filesystem_read"}}
+
+Only respond with the JSON object or null, no other text.
 """

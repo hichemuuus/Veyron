@@ -13,15 +13,34 @@ from typing import Any
 
 import httpx
 
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from veyron.llm.base import (
     GenerateChunk,
     GenerateOptions,
     LLMProvider,
+    LLMRetryableError,
     LLMUnavailableError,
     Message,
 )
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.RemoteProtocolError,
+    httpx.StreamError,
+    LLMRetryableError,
+)
 
 
 class RemoteProvider(LLMProvider):
@@ -85,69 +104,83 @@ class RemoteProvider(LLMProvider):
             payload["tools"] = [self._to_openai_tool(t) for t in opts.tools]
             payload["tool_choice"] = "auto"
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                async with client.stream(
-                    "POST",
-                    self._chat_url,
-                    headers=self._headers(),
-                    json=payload,
-                ) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        raise LLMUnavailableError(
-                            f"remote /chat/completions returned {resp.status_code}: {body[:500]!r}"
-                        )
-                    async for line in resp.aiter_lines():
-                        if not line.startswith("data: "):
-                            continue
-                        data_str = line[6:].strip()
-                        if not data_str or data_str == "[DONE]":
-                            continue
-                        try:
-                            chunk_json = json.loads(data_str)
-                        except json.JSONDecodeError:
-                            continue
+        retrier = AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=2, min=2, max=8),
+            retry=retry_if_exception_type(_RETRYABLE),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+        )
 
-                        choices = chunk_json.get("choices", [])
-                        if not choices:
-                            continue
-                        delta = choices[0].get("delta", {})
-                        finish_reason = choices[0].get("finish_reason")
-
-                        content = delta.get("content", "")
-                        if content:
-                            yield GenerateChunk(text=content)
-
-                        tool_calls = delta.get("tool_calls")
-                        if tool_calls:
-                            for tc in tool_calls:
-                                fn = tc.get("function", {})
-                                args_raw = fn.get("arguments", "{}")
-                                try:
-                                    args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
-                                except json.JSONDecodeError:
-                                    args = {"raw": args_raw}
-                                yield GenerateChunk(
-                                    tool_call={
-                                        "id": tc.get("id", f"call_{abs(hash(args_raw)) % 10**10}"),
-                                        "name": fn.get("name", ""),
-                                        "arguments": args,
-                                    }
+        async for attempt in retrier:
+            with attempt:
+                try:
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        async with client.stream(
+                            "POST",
+                            self._chat_url,
+                            headers=self._headers(),
+                            json=payload,
+                        ) as resp:
+                            if resp.status_code != 200:
+                                body = await resp.aread()
+                                if 500 <= resp.status_code < 600:
+                                    raise LLMRetryableError(
+                                        f"remote /chat/completions returned {resp.status_code}: {body[:500]!r}"
+                                    )
+                                raise LLMUnavailableError(
+                                    f"remote /chat/completions returned {resp.status_code}: {body[:500]!r}"
                                 )
+                            async for line in resp.aiter_lines():
+                                if not line.startswith("data: "):
+                                    continue
+                                data_str = line[6:].strip()
+                                if not data_str or data_str == "[DONE]":
+                                    continue
+                                try:
+                                    chunk_json = json.loads(data_str)
+                                except json.JSONDecodeError:
+                                    continue
 
-                        if finish_reason:
-                            fr_map = {
-                                "stop": "stop",
-                                "tool_calls": "tool_use",
-                                "length": "length",
-                            }
-                            yield GenerateChunk(done=True, finish_reason=fr_map.get(finish_reason, "stop"))
-                            return
-        except httpx.HTTPError as e:
-            raise LLMUnavailableError(f"remote request failed: {e}") from e
+                                choices = chunk_json.get("choices", [])
+                                if not choices:
+                                    continue
+                                delta = choices[0].get("delta", {})
+                                finish_reason = choices[0].get("finish_reason")
 
-        yield GenerateChunk(done=True, finish_reason="stop")
+                                content = delta.get("content", "")
+                                if content:
+                                    yield GenerateChunk(text=content)
+
+                                tool_calls = delta.get("tool_calls")
+                                if tool_calls:
+                                    for tc in tool_calls:
+                                        fn = tc.get("function", {})
+                                        args_raw = fn.get("arguments", "{}")
+                                        try:
+                                            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+                                        except json.JSONDecodeError:
+                                            args = {"raw": args_raw}
+                                        yield GenerateChunk(
+                                            tool_call={
+                                                "id": tc.get("id", f"call_{abs(hash(args_raw)) % 10**10}"),
+                                                "name": fn.get("name", ""),
+                                                "arguments": args,
+                                            }
+                                        )
+
+                                if finish_reason:
+                                    fr_map = {
+                                        "stop": "stop",
+                                        "tool_calls": "tool_use",
+                                        "length": "length",
+                                    }
+                                    yield GenerateChunk(done=True, finish_reason=fr_map.get(finish_reason, "stop"))
+                                    return
+                except httpx.HTTPError as e:
+                    raise LLMRetryableError(f"remote request failed: {e}") from e
+
+                yield GenerateChunk(done=True, finish_reason="stop")
 
     async def embed(self, text: str) -> list[float]:
         payload = {

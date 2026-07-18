@@ -97,7 +97,7 @@ export function AgentWorkspacePage() {
         </div>
         <Link
           to="/tasks"
-          className="focus-ring rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-50"
+          className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-3.5 py-2 text-xs font-medium text-ink-400 transition-colors hover:bg-ink-200"
         >
           All tasks →
         </Link>
@@ -116,7 +116,7 @@ export function AgentWorkspacePage() {
               onKeyDown={onKeyDown}
               rows={6}
               placeholder="What would you like me to do?"
-              className="focus-ring h-full min-h-[10rem] w-full resize-none rounded-xl border border-ink-200 bg-ink-50/50 p-3.5 text-sm leading-relaxed text-ink-900 placeholder:text-ink-400"
+              className="focus-ring h-full min-h-[10rem] w-full resize-none rounded-xl border border-ink-200 bg-ink-100/50 p-3.5 text-sm leading-relaxed text-ink-900 placeholder:text-ink-400"
             />
             <div className="pointer-events-none absolute bottom-2.5 right-3.5 font-mono text-[10px] text-ink-400">
               {goal.length}/8000 · ⌘↵ to run
@@ -149,7 +149,7 @@ export function AgentWorkspacePage() {
                 <button
                   key={g}
                   onClick={() => setGoal(g)}
-                  className="focus-ring rounded-lg border border-transparent px-3 py-2 text-left text-xs leading-relaxed text-ink-500 transition-colors hover:border-ink-200 hover:bg-ink-50 hover:text-ink-800"
+                  className="focus-ring rounded-lg border border-transparent px-3 py-2 text-left text-xs leading-relaxed text-ink-500 transition-colors hover:border-ink-200 hover:bg-ink-100 hover:text-ink-800"
                 >
                   {g}
                 </button>
@@ -216,14 +216,18 @@ function ExecutionView({
           </div>
           <p className="mt-2 truncate text-sm text-ink-800">{task.request}</p>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <MemoryIndicator active={active} />
-          <button
-            onClick={onOpenDetail}
-            className="focus-ring rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-[11px] font-medium text-ink-600 transition-colors hover:bg-ink-50"
-          >
-            Details →
-          </button>
+        <div className="min-w-0 shrink-0">
+          <div className="flex items-center gap-2">
+            <div className="overflow-hidden">
+              <MemoryIndicator active={active} />
+            </div>
+            <button
+              onClick={onOpenDetail}
+              className="focus-ring shrink-0 rounded-lg border border-ink-200 bg-ink-100 px-2.5 py-1.5 text-[11px] font-medium text-ink-400 transition-colors hover:bg-ink-200"
+            >
+              Details →
+            </button>
+          </div>
         </div>
       </div>
 

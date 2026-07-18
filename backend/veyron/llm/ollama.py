@@ -18,15 +18,34 @@ from typing import Any
 
 import httpx
 
+from tenacity import (
+    AsyncRetrying,
+    before_sleep_log,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from veyron.llm.base import (
     GenerateChunk,
     GenerateOptions,
     LLMProvider,
+    LLMRetryableError,
     LLMUnavailableError,
     Message,
 )
 
 logger = logging.getLogger(__name__)
+
+_RETRYABLE = (
+    httpx.ConnectError,
+    httpx.ConnectTimeout,
+    httpx.ReadTimeout,
+    httpx.WriteTimeout,
+    httpx.RemoteProtocolError,
+    httpx.StreamError,
+    LLMRetryableError,
+)
 
 
 class OllamaProvider(LLMProvider):
@@ -84,58 +103,79 @@ class OllamaProvider(LLMProvider):
             payload["tools"] = [self._to_ollama_tool(t) for t in opts.tools]
 
         url = f"{self.base_url}/api/chat"
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                async with client.stream("POST", url, json=payload) as resp:
-                    if resp.status_code != 200:
-                        body = await resp.aread()
-                        raise LLMUnavailableError(
-                            f"ollama /api/chat returned {resp.status_code}: {body[:500]!r}"
-                        )
-                    accumulated = ""
-                    emitted_tool_call = False
-                    async for line in resp.aiter_lines():
-                        if not line:
-                            continue
-                        try:
-                            chunk_json = json.loads(line)
-                        except json.JSONDecodeError:
-                            continue
-                        msg = chunk_json.get("message", {}) or {}
-                        content = msg.get("content", "") or ""
-                        tool_calls = msg.get("tool_calls") or []
 
-                        # Emit any tool calls as separate chunks.
-                        for tc in tool_calls:
-                            emitted_tool_call = True
-                            args = tc.get("function", {}).get("arguments", tc.get("arguments", {}))
-                            yield GenerateChunk(
-                                tool_call={
-                                    "id": tc.get("id", "") or f"call_{len(accumulated)}",
-                                    "name": tc.get("function", {}).get("name") or tc.get("name", ""),
-                                    "arguments": args if isinstance(args, dict) else _safe_json(args),
-                                }
-                            )
+        retrier = AsyncRetrying(
+            stop=stop_after_attempt(3),
+            wait=wait_exponential(multiplier=2, min=2, max=8),
+            retry=retry_if_exception_type(_RETRYABLE),
+            reraise=True,
+            before_sleep=before_sleep_log(logger, logging.WARNING),
+        )
 
-                        if content:
-                            accumulated += content
-                            # Some local models emit tool calls as JSON inside content
-                            # rather than via the tools API. Try to detect that.
-                            parsed = _maybe_extract_tool_call(accumulated)
-                            if parsed:
-                                yield GenerateChunk(tool_call=parsed, done=True, finish_reason="tool_use")
-                                return
-                            yield GenerateChunk(text=content)
+        async for attempt in retrier:
+            with attempt:
+                try:
+                    async with httpx.AsyncClient(timeout=self.timeout) as client:
+                        async with client.stream("POST", url, json=payload) as resp:
+                            if resp.status_code != 200:
+                                body = await resp.aread()
+                                if 500 <= resp.status_code < 600:
+                                    raise LLMRetryableError(
+                                        f"ollama /api/chat returned {resp.status_code}: {body[:500]!r}"
+                                    )
+                                raise LLMUnavailableError(
+                                    f"ollama /api/chat returned {resp.status_code}: {body[:500]!r}"
+                                )
+                            accumulated = ""
+                            emitted_tool_call = False
+                            async for line in resp.aiter_lines():
+                                if not line:
+                                    continue
+                                try:
+                                    chunk_json = json.loads(line)
+                                except json.JSONDecodeError:
+                                    continue
+                                msg = chunk_json.get("message", {}) or {}
+                                content = msg.get("content", "") or ""
+                                tool_calls = msg.get("tool_calls") or []
 
-                        if chunk_json.get("done"):
-                            finish = "tool_use" if (emitted_tool_call or tool_calls) else "stop"
-                            yield GenerateChunk(done=True, finish_reason=finish)
-                            return
-        except httpx.HTTPError as e:
-            raise LLMUnavailableError(f"ollama request failed: {e}") from e
+                                # Emit any tool calls as separate chunks.
+                                for tc in tool_calls:
+                                    emitted_tool_call = True
+                                    args = tc.get("function", {}).get("arguments", tc.get("arguments", {}))
+                                    yield GenerateChunk(
+                                        tool_call={
+                                            "id": tc.get("id", "") or f"call_{len(accumulated)}",
+                                            "name": tc.get("function", {}).get("name") or tc.get("name", ""),
+                                            "arguments": args if isinstance(args, dict) else _safe_json(args),
+                                        }
+                                    )
 
-        # Stream ended without an explicit done flag.
-        yield GenerateChunk(done=True, finish_reason="stop")
+                                if content:
+                                    accumulated += content
+                                    # Some local models emit tool calls as JSON inside content
+                                    # rather than via the tools API. Try to detect that.
+                                    parsed = _maybe_extract_tool_call(accumulated)
+                                    if parsed:
+                                        yield GenerateChunk(tool_call=parsed, done=True, finish_reason="tool_use")
+                                        return
+                                    yield GenerateChunk(text=content)
+
+                                if chunk_json.get("done"):
+                                    finish = "tool_use" if (emitted_tool_call or tool_calls) else "stop"
+                                    yield GenerateChunk(done=True, finish_reason=finish)
+                                    return
+                except httpx.ConnectError as e:
+                    raise LLMRetryableError(
+                        "Ollama is not running. Install Ollama from https://ollama.ai "
+                        "and pull a model (e.g., `ollama pull llama3.2`). "
+                        f"Connection to {self.base_url} failed."
+                    ) from e
+                except httpx.HTTPError as e:
+                    raise LLMRetryableError(f"Ollama request failed: {e}") from e
+
+                # Stream ended without an explicit done flag.
+                yield GenerateChunk(done=True, finish_reason="stop")
 
     async def embed(self, text: str) -> list[float]:
         payload = {"model": self.embedding_model, "input": text}
@@ -148,8 +188,13 @@ class OllamaProvider(LLMProvider):
                 if embeddings and isinstance(embeddings[0], list):
                     return embeddings[0]
                 return embeddings
+        except httpx.ConnectError as e:
+            raise LLMUnavailableError(
+                "Ollama is not running. Install Ollama from https://ollama.ai "
+                f"to enable AI features. Connection to {self.base_url} failed."
+            ) from e
         except httpx.HTTPError as e:
-            raise LLMUnavailableError(f"ollama embed failed: {e}") from e
+            raise LLMUnavailableError(f"Ollama embed failed: {e}") from e
 
     # --- Serialization helpers -------------------------------------------
 

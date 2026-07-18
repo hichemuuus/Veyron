@@ -200,7 +200,9 @@ class TestFallbackBehavior:
         result = ClassifierResult(category="system_management", confidence=0.8)
         assert not should_use_llm(result)  # 0.8 >= 0.7 default
 
-    def test_classify_fallback_when_no_model(self):
+    def test_classify_fallback_when_no_model(self, monkeypatch):
+        from veyron.intelligence.intent import inference as intent_inference
+        monkeypatch.setattr(intent_inference, "_resolve_model_path", lambda: None)
         reset_model()
         result = classify_intent("What is the meaning of life?")
         assert result.model_used == "fallback"
@@ -437,42 +439,4 @@ class TestRuntimeIntegration:
         assert callable(reset_ts_model)
 
 
-# ── Parameter extraction tests ───────────────────────────────────────────────
 
-class TestParameterExtraction:
-    def test_parameter_schema_defined(self):
-        from veyron.intelligence.parameter_extraction.schema import (
-            TOOL_PARAMETER_SCHEMAS,
-        )
-        assert len(TOOL_PARAMETER_SCHEMAS) >= 4
-        assert "filesystem_read" in TOOL_PARAMETER_SCHEMAS
-        assert "terminal" in TOOL_PARAMETER_SCHEMAS
-
-    def test_parameter_example_creation(self):
-        from veyron.intelligence.parameter_extraction.schema import ParameterExample
-        ex = ParameterExample(
-            request="list files in src",
-            tool_name="filesystem_read",
-            expected_parameters={"path": "src"},
-        )
-        assert ex.request == "list files in src"
-        assert ex.expected_parameters["path"] == "src"
-
-    def test_parameter_dataset_load(self):
-        from veyron.intelligence.parameter_extraction.dataset import ParameterExtractionDataset
-        path = DATA_DIR / "training" / "synthetic_training_data.jsonl"
-        if not path.exists():
-            pytest.skip("synthetic data not found")
-        dataset = ParameterExtractionDataset.from_synthetic_jsonl(str(path))
-        assert len(dataset) > 0
-        summary = dataset.summary()
-        assert summary["total"] > 0
-        assert "tools" in summary
-
-    def test_parameter_evaluation_placeholder(self):
-        from veyron.intelligence.parameter_extraction.evaluation import (
-            ParameterExtractionEvaluator,
-        )
-        evaluator = ParameterExtractionEvaluator()
-        result = evaluator.evaluate([], [])
-        assert result["total"] == 0

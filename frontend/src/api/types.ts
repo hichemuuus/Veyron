@@ -92,8 +92,10 @@ export interface DashboardData {
   completed_tasks: number
   failed_tasks: number
   total_tasks: number
-  recent_tasks: RecentTask[]
-  system: SystemOverview
+  recent_tasks: RecentTask[] | null
+  recent_tasks_error?: string
+  system: SystemOverview | null
+  system_error?: string
   timestamp: string
 }
 
@@ -205,7 +207,14 @@ export interface WsError {
   payload: { error: string }
 }
 
-export type WsServerMessage = WsEvent | WsAck | WsError
+export interface WsMonitorSnapshot {
+  type: 'monitor.snapshot'
+  topic: string | null
+  ts: number
+  payload: SystemSnapshot
+}
+
+export type WsServerMessage = WsEvent | WsAck | WsError | WsMonitorSnapshot
 
 export interface WsClientMessage {
   type: 'subscribe' | 'unsubscribe' | 'confirm.respond'
@@ -389,6 +398,74 @@ export interface SystemProcesses {
   sort_by: string
 }
 
+// ── Monitoring snapshot (pushed via WebSocket) ────────────────────────
+
+export interface MonitorCpu {
+  percent: number
+  per_cpu: number[]
+  frequency_mhz: number
+  count_logical: number
+  count_physical: number
+  load_avg: number[]
+}
+
+export interface MonitorMemory {
+  total: number
+  available: number
+  used: number
+  free: number
+  percent: number
+  swap_total: number
+  swap_used: number
+  swap_percent: number
+}
+
+export interface MonitorDisk {
+  device: string
+  mountpoint: string
+  fstype: string
+  total: number
+  used: number
+  free: number
+  percent: number
+}
+
+export interface MonitorNetwork {
+  bytes_sent: number
+  bytes_recv: number
+  packets_sent: number
+  packets_recv: number
+  bytes_sent_per_sec: number
+  bytes_recv_per_sec: number
+}
+
+export interface MonitorTemperature {
+  name: string
+  label: string
+  current: number
+  high: number | null
+  critical: number | null
+}
+
+export interface MonitorProcess {
+  pid: number
+  name: string
+  username: string | null
+  cpu_percent: number
+  memory_percent: number
+}
+
+export interface SystemSnapshot {
+  cpu: MonitorCpu
+  memory: MonitorMemory
+  gpu_exists: boolean
+  disks: MonitorDisk[]
+  network: MonitorNetwork
+  temperatures: MonitorTemperature[]
+  top_processes: MonitorProcess[]
+  timestamp: number
+}
+
 // ── Project analysis ───────────────────────────────────────────────────
 
 export interface ProjectTechnology {
@@ -420,4 +497,153 @@ export interface ProjectAnalysis {
   recommendations: string[]
   dependencies: Record<string, string[]>
   structure: ProjectTreeNode
+}
+
+// ── Learning Dashboard Types ────────────────────────────────────────────
+
+export interface LearningOverview {
+  reflection_count: number
+  skill_count: number
+  workflow_count: number
+  benchmark_count: number
+  event_count: number
+  model_count: number
+  timestamp: string
+}
+
+export interface LearningReflection {
+  public_id: string
+  task_public_id: string
+  category: string
+  success: boolean
+  confidence: number
+  planning_quality: number
+  tool_selection_quality: number
+  parameter_quality: number
+  memory_usefulness: number
+  mistake_count: number
+  improvement_count: number
+  tool_issue_count: number
+  summary: string
+  improvement_notes: string
+  created_at: string | null
+}
+
+export interface LearningReflectionsResponse {
+  reflections: LearningReflection[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface LearningSkill {
+  public_id: string
+  name: string
+  description: string
+  frequency: number
+  confidence: number
+  pattern_steps: Array<{ step_type: string; tool_name: string; params: Record<string, unknown> }>
+  enabled: boolean
+  last_used_at: string | null
+  created_at: string | null
+}
+
+export interface LearningSkillsResponse {
+  skills: LearningSkill[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface LearningSkillsStats {
+  total: number
+  enabled: number
+  average_confidence: number
+  top_skills: Array<{ name: string; frequency: number; confidence: number }>
+}
+
+export interface LearningWorkflowItem {
+  public_id: string
+  name: string
+  description: string
+  version: string
+  tags: string[]
+  step_count: number
+  use_count: number
+  success_rate: number
+  source: string
+  enabled: boolean
+  created_at: string | null
+}
+
+export interface LearningWorkflowsResponse {
+  workflows: LearningWorkflowItem[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface LearningWorkflowStats {
+  total: number
+  enabled: number
+  total_uses: number
+}
+
+export interface LearningReflectionStats {
+  total_reflections: number
+  average_confidence: number
+  average_planning_quality: number
+  average_tool_selection_quality: number
+  average_memory_usefulness: number
+  reflections_by_category: Record<string, number>
+}
+
+export interface LearningBenchmark {
+  public_id: string
+  benchmark_name: string
+  model_type: string
+  model_version: string
+  metrics: Record<string, number>
+  score: number
+  regressions: string[]
+  duration_ms: number
+  created_at: string | null
+}
+
+export interface LearningBenchmarksResponse {
+  benchmarks: LearningBenchmark[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface LearningEvent {
+  public_id: string
+  event_type: string
+  category: string
+  summary: string
+  details: Record<string, unknown>
+  created_at: string | null
+}
+
+export interface LearningEventsResponse {
+  events: LearningEvent[]
+  total: number
+  limit: number
+  offset: number
+}
+
+export interface LearningModelVersion {
+  version: string
+  status: string
+  dataset_size: number
+  metrics: Record<string, number>
+  path: string
+  parent_version: string
+  created_at: string | null
+}
+
+export interface LearningModelsResponse {
+  models_by_type: Record<string, LearningModelVersion[]>
+  total: number
 }

@@ -84,6 +84,19 @@ Run the NSIS installer. It installs Veyron to `%LOCALAPPDATA%\Veyron`
 
 ## Release Workflow
 
+### Prerequisites: Updater signing key
+
+The production updater requires a signing key pair. The public key is embedded in
+`tauri.conf.json`; the private key must be available at build time.
+
+**Generate a new keypair** (one-time per project):
+
+```bash
+npx tauri signer generate -w ./veyron-updater-key.private
+```
+
+**Keep the private key secret and backed up.** It controls update authenticity.
+
 ### Creating a new release
 
 1. Bump version in:
@@ -98,12 +111,27 @@ Run the NSIS installer. It installs Veyron to `%LOCALAPPDATA%\Veyron`
    python scripts/build_backend.py
    ```
 
-3. Build the desktop installer:
+3. Build the desktop installer (signed):
    ```bash
-   cd frontend && npm run tauri:build
+   cd frontend
+   $env:TAURI_SIGNING_PRIVATE_KEY_PATH = "..\..\veyron-updater-key.private"
+   $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "veyron-release-2026"
+   npm run tauri:build
+   ```
+   On Linux/macOS:
+   ```bash
+   cd frontend
+   TAURI_SIGNING_PRIVATE_KEY_PATH="../../veyron-updater-key.private" \
+   TAURI_SIGNING_PRIVATE_KEY_PASSWORD="veyron-release-2026" \
+   npm run tauri:build
    ```
 
-4. Create a GitHub Release with the installer and update metadata.
+4. The build produces:
+   - `src-tauri/target/release/Veyron.exe` — standalone executable
+   - `src-tauri/target/release/bundle/nsis/Veyron_1.0.0_x64-setup.exe` — signed NSIS installer
+   - `src-tauri/target/release/bundle/nsis/Veyron_1.0.0_x64-setup.exe.sig` — update signature
+
+5. Create a GitHub Release with the installer and `.sig` file.
 
 ### Update system
 
@@ -112,9 +140,10 @@ Veyron checks for updates via:
 2. **GitHub Releases API** (fallback) — `https://api.github.com/repos/anomalyco/veyron/releases/latest`
 
 To publish an update:
-1. Upload the NSIS installer to the GitHub Release
-2. Ensure the release tag follows semver (`v1.1.0`, `v2.0.0`, etc.)
-3. Veyron users will be notified on next startup
+1. Build the installer with signing env vars set (see above)
+2. Upload the NSIS installer AND the `.sig` file to the GitHub Release
+3. Ensure the release tag follows semver (`v1.1.0`, `v2.0.0`, etc.)
+4. Veyron users will be notified on next startup
 
 ## Project Structure (Desktop)
 

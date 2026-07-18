@@ -98,6 +98,10 @@ class ModelConfig(BaseSettings):
     temperature: float = 0.2
     max_tokens: int = 1024
 
+    # Reflection sampling: fraction of successful tasks to reflect on.
+    # Always reflects on failures regardless of this rate.
+    reflection_sample_rate: float = 0.2
+
     # If True and Ollama is unreachable, the agent returns a clear error rather
     # than attempting a fallback. Flip to enable cloud fallback later.
     require_local_model: bool = True
@@ -105,6 +109,7 @@ class ModelConfig(BaseSettings):
     # Micro-model (Tier-1) settings.
     micro_models_enabled: bool = False
     micro_model_confidence_threshold: float = 0.7
+    filter_tools_by_prediction: bool = True
 
     # Remote provider (fallback when the local model is unavailable).
     # Uses OpenAI-compatible API format (works with OpenAI, Together, Groq, etc.).
@@ -118,15 +123,53 @@ class ModelConfig(BaseSettings):
     scheduler_interval_seconds: int = 300
     retrain_min_growth_pct: float = 10.0
 
+    # Learning & Automation settings.
+    auto_promote_models: bool = True  # auto-promote better models to production after training
+    learning_enabled: bool = True
+    reflection_store_enabled: bool = True
+    skill_detection_enabled: bool = True
+    skill_min_frequency: int = 3
+    workflow_engine_enabled: bool = True
+    plugin_system_enabled: bool = True
+    auto_improvement_enabled: bool = True
+    auto_improvement_interval_seconds: int = 3600
+    benchmark_comparison_enabled: bool = True
+    model_rollback_enabled: bool = True
+    never_deploy_weaker: bool = True
+    memory_importance_scoring_enabled: bool = True
+    memory_duplicate_detection_enabled: bool = True
+    memory_merging_enabled: bool = True
+    memory_summarization_enabled: bool = True
+    memory_decay_enabled: bool = True
+    user_profile_enabled: bool = True
+    user_profile_update_interval_hours: int = 24
+
 
 class ServerConfig(BaseSettings):
     """HTTP server settings."""
 
     host: str = "127.0.0.1"
     port: int = 8000
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173", "tauri://localhost", "https://tauri.localhost"])
     # Serve the built frontend from this directory in production mode.
     frontend_dist: str = str(PROJECT_ROOT / "frontend" / "dist")
+    # Bearer token for API authentication. If None, auth is disabled (dev mode).
+    api_auth_token: str | None = None
+
+
+class MonitorConfig(BaseSettings):
+    """System monitoring settings."""
+
+    cpu_interval: float = 0.2
+    process_interval: float = 0.25
+    memory_interval: float = 0.5
+    disk_interval: float = 1.0
+    network_interval: float = 0.5
+    temp_interval: float = 1.0
+    gpu_interval: float = 5.0
+    top_n_processes: int = 30
+    push_interval: float = 0.2
+    enabled: bool = True
 
 
 class Settings(BaseSettings):
@@ -147,6 +190,7 @@ class Settings(BaseSettings):
 
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     model: ModelConfig = Field(default_factory=ModelConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
 
@@ -184,6 +228,8 @@ def get_settings() -> Settings:
         settings.model = ModelConfig(**(overrides["model"] or {}))
     if "server" in overrides:
         settings.server = ServerConfig(**(overrides["server"] or {}))
+    if "monitor" in overrides:
+        settings.monitor = MonitorConfig(**(overrides["monitor"] or {}))
     if "environment" in overrides:
         settings.environment = overrides["environment"]
     if "database_url" in overrides:

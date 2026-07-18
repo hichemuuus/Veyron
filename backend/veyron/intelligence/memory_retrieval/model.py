@@ -1,8 +1,7 @@
 """Memory retrieval model — ranks candidate memories by relevance to a query.
 
 Uses TF-IDF vectorization (word n-grams, sublinear TF) + cosine similarity,
-matching the micro-model stack used by ``parameter_extraction`` and
-``tool_selector``. No external embedding service is required.
+matching the micro-model stack used by ``tool_selector``. No external embedding service is required.
 
 The model is fit on a corpus of memory texts: this teaches the vectorizer the
 vocabulary and IDF weights. At inference time, the query and each candidate are

@@ -61,7 +61,7 @@ export function ToolCenterPage() {
         </div>
         <button
           onClick={load}
-          className="focus-ring rounded-lg border border-ink-200 bg-white px-3.5 py-2 text-xs font-medium text-ink-600 transition-colors hover:bg-ink-50"
+          className="focus-ring rounded-lg border border-ink-200 bg-ink-100 px-3.5 py-2 text-xs font-medium text-ink-400 transition-colors hover:bg-ink-200"
         >
           ↻ Refresh
         </button>
@@ -139,11 +139,11 @@ function ToolListItem({
       className={`focus-ring group flex flex-col gap-1.5 rounded-xl border px-3.5 py-3 text-left transition-all ${
         active
           ? 'border-sig-500/40 bg-sig-50 shadow-soft'
-          : 'border-ink-200 bg-white hover:border-ink-300 hover:bg-ink-50/50'
+          : 'border-ink-200 bg-ink-100 hover:border-ink-300 hover:bg-ink-200'
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-xs font-medium text-ink-800">{tool.name}</span>
+        <span className="truncate font-mono text-xs font-medium text-ink-800">{tool.name}</span>
         <span
           className={`rounded-full border px-1.5 py-px text-[9px] font-medium uppercase tracking-wide ${
             tone === 'ok'
@@ -291,7 +291,14 @@ function ToolDetail({ name, onError }: { name: string; onError: (msg: string) =>
           />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left">
+            <table className="w-full table-fixed border-collapse text-left">
+              <colgroup>
+                <col className="w-[18ch]" />
+                <col className="w-[10ch]" />
+                <col className="w-[8ch]" />
+                <col className="w-[10ch]" />
+                <col />
+              </colgroup>
               <thead>
                 <tr className="hud-label border-b border-ink-200/70">
                   <th className="py-2.5 pr-3 font-medium">When</th>
@@ -305,7 +312,7 @@ function ToolDetail({ name, onError }: { name: string; onError: (msg: string) =>
                 {recent.map((inv, i) => (
                   <tr
                     key={`${inv.timestamp}-${i}`}
-                    className="border-b border-ink-100 text-xs transition-colors hover:bg-ink-50/50"
+                    className="border-b border-ink-100 text-xs transition-colors hover:bg-ink-100/50"
                   >
                     <td className="py-2.5 pr-3 data-mono text-ink-500">
                       {fmtClock(inv.timestamp)}
@@ -360,7 +367,7 @@ function SchemaRow({
   const enumVals = Array.isArray(schema.enum) ? (schema.enum as string[]) : null
   const hasDetail = !!desc || !!enumVals || Object.keys(schema).length > 3
   return (
-    <div className="rounded-lg border border-ink-200/70 bg-ink-50/40">
+    <div className="rounded-lg border border-ink-200/70 bg-ink-100/40">
       <button
         onClick={hasDetail ? onToggle : undefined}
         className={`flex w-full items-center justify-between gap-2 px-3 py-2 text-left ${
@@ -388,7 +395,7 @@ function SchemaRow({
           {enumVals ? (
             <div className="mb-1.5">
               <span className="hud-label mr-1">enum</span>
-              <span className="font-mono text-ink-600">
+              <span className="text-wrap-safe font-mono text-ink-600">
                 {enumVals.join(' | ')}
               </span>
             </div>

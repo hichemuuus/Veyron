@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter
 
 from veyron.core.task_manager import get_task_manager
+from sqlmodel import select, delete, update, func
 from veyron.db.base import sync_session_scope
 from veyron.db.models import Task, TaskStatus
 from veyron.tools.base import ToolContext
@@ -32,15 +33,16 @@ async def dashboard() -> dict:
     failed_count = 0
     with sync_session_scope() as session:
         active_count = (
-            session.query(Task)
-            .filter(Task.status.in_([TaskStatus.RUNNING, TaskStatus.PLANNING, TaskStatus.PAUSED, TaskStatus.CREATED]))
-            .count()
+            len(session.exec(
+                select(Task)
+                .where(Task.status.in_([TaskStatus.RUNNING, TaskStatus.PLANNING, TaskStatus.PAUSED, TaskStatus.CREATED]))
+            ).all())
         )
         completed_count = (
-            session.query(Task).filter(Task.status == TaskStatus.COMPLETED).count()
+            len(session.exec(select(Task).where(Task.status == TaskStatus.COMPLETED)).all())
         )
         failed_count = (
-            session.query(Task).filter(Task.status.in_([TaskStatus.FAILED, TaskStatus.CANCELLED])).count()
+            len(session.exec(select(Task).where(Task.status.in_([TaskStatus.FAILED, TaskStatus.CANCELLED]))).all())
         )
 
     recent = tm.list_tasks(limit=10, offset=0)

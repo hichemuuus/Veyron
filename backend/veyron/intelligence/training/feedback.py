@@ -11,6 +11,7 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
+from sqlmodel import select, delete, update, func
 from veyron.db.base import sync_session_scope
 from veyron.db.models import Task, TaskStatus, ToolInvocation
 from veyron.intelligence.training.dataset import TrainingDataset, TrainingExample
@@ -127,10 +128,12 @@ class TrainingFeedbackLoop:
     def _fetch_completed_tasks(self, limit: int) -> list[Task]:
         with sync_session_scope() as session:
             return (
-                session.query(Task)
-                .filter(Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]))
-                .order_by(Task.finished_at.desc())
-                .limit(limit)
+                session.exec(
+                    select(Task)
+                    .where(Task.status.in_([TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED]))
+                    .order_by(Task.finished_at.desc())
+                    .limit(limit)
+                )
                 .all()
             )
 
@@ -139,8 +142,10 @@ class TrainingFeedbackLoop:
         try:
             with sync_session_scope() as session:
                 invocations = (
-                    session.query(ToolInvocation)
-                    .filter(ToolInvocation.task_public_id == task_public_id)
+                    session.exec(
+                        select(ToolInvocation)
+                        .where(ToolInvocation.task_public_id == task_public_id)
+                    )
                     .all()
                 )
                 tools = [inv.tool_name for inv in invocations if inv.tool_name]
@@ -155,8 +160,10 @@ class TrainingFeedbackLoop:
             from veyron.db.models import ExecutionStep
             with sync_session_scope() as session:
                 steps = (
-                    session.query(ExecutionStep)
-                    .filter(ExecutionStep.task_public_id == task_public_id)
+                    session.exec(
+                        select(ExecutionStep)
+                        .where(ExecutionStep.task_public_id == task_public_id)
+                    )
                     .all()
                 )
                 tool_calls = sum(1 for s in steps if s.step_type == "tool_call")

@@ -12,9 +12,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from veyron.core.agent import get_agent
@@ -36,28 +37,11 @@ class AgentResponse(BaseModel):
 
 
 @router.post("", response_model=AgentResponse)
-async def create_task(req: AgentRequest, background: BackgroundTasks) -> AgentResponse:
+async def create_task(req: AgentRequest) -> AgentResponse:
     """Create a task and start running it in the background."""
     mgr = get_task_manager()
     public_id = mgr.create_task(req.request)
-
-    async def _run() -> None:
-        try:
-            await get_agent().run(req.request, task_public_id=public_id)
-        except Exception as e:  # noqa: BLE001
-            from veyron.db.base import sync_session_scope
-            from veyron.db.models import Task
-            with sync_session_scope() as session:
-                t = session.query(Task).where(Task.public_id == public_id).first()
-                if t is not None:
-                    t.status = TaskStatus.FAILED
-                    t.error = f"{type(e).__name__}: {e}"
-                    session.add(t)
-            get_bus().publish_nowait(
-                Event(type="task.failed", topic=public_id, payload={"error": str(e)})
-            )
-
-    background.add_task(_run)
+    asyncio.create_task(_run_agent(req.request, public_id))
     return AgentResponse(public_id=public_id, status=TaskStatus.CREATED, request=req.request)
 
 
@@ -95,7 +79,20 @@ def get_timeline(public_id: str, limit: int = 200) -> dict[str, Any]:
     if info is None:
         raise HTTPException(status_code=404, detail="task not found")
     history = mgr.get_history(public_id, limit=limit)
-    return {"task_public_id": public_id, "steps": history, "summary": info.progress}
+    p = info.progress
+    return {
+        "task_public_id": public_id,
+        "steps": history,
+        "summary": {
+            "total_steps": p.total_steps,
+            "completed_steps": p.completed_steps,
+            "failed_steps": p.failed_steps,
+            "retry_count": p.retry_count,
+            "tool_count": p.tool_count,
+            "current_step": p.current_step,
+            "percent": p.percent,
+        },
+    }
 
 
 @router.post("/{public_id}/cancel")
@@ -120,27 +117,14 @@ def pause_task(public_id: str) -> dict[str, Any]:
 
 
 @router.post("/{public_id}/resume")
-async def resume_task(public_id: str, background: BackgroundTasks) -> dict[str, Any]:
+async def resume_task(public_id: str) -> dict[str, Any]:
     """Resume a paused or failed task."""
     mgr = get_task_manager()
     info = mgr.resume_task(public_id)
     if info is None:
         raise HTTPException(status_code=404, detail="task not found")
 
-    async def _run() -> None:
-        try:
-            await get_agent().run(info.request, task_public_id=public_id)
-        except Exception as e:  # noqa: BLE001
-            from veyron.db.base import sync_session_scope
-            from veyron.db.models import Task
-            with sync_session_scope() as session:
-                t = session.query(Task).where(Task.public_id == public_id).first()
-                if t is not None:
-                    t.status = TaskStatus.FAILED
-                    t.error = f"{type(e).__name__}: {e}"
-                    session.add(t)
-
-    background.add_task(_run)
+    asyncio.create_task(_run_agent(info.request, public_id))
     return {"status": "resumed", "public_id": public_id}
 
 
@@ -190,7 +174,46 @@ def submit_feedback(public_id: str, fb: UserFeedback) -> dict[str, Any]:
     if not updated:
         raise HTTPException(status_code=404, detail="no interaction found for this task")
 
+    if fb.score < 0.5:
+        from sqlmodel import select
+        from veyron.db.base import sync_session_scope
+        from veyron.db.models import PredictionLog
+
+        with sync_session_scope() as session:
+            recent = (
+                session.exec(
+                    select(PredictionLog)
+                    .where(PredictionLog.input_text == info.request)
+                    .order_by(PredictionLog.id.desc())
+                ).first()
+            )
+            if recent is not None:
+                recent.needs_review = True
+                session.add(recent)
+
     return {"status": "ok", "public_id": public_id, "feedback_score": fb.score}
+
+
+# ── Background execution ─────────────────────────────────────────────
+
+
+async def _run_agent(request: str, public_id: str) -> None:
+    """Run agent in background and mark task as failed on exception."""
+    try:
+        await get_agent().run(request, task_public_id=public_id)
+    except Exception as e:  # noqa: BLE001
+        from sqlmodel import select
+        from veyron.db.base import sync_session_scope
+        from veyron.db.models import Task
+        with sync_session_scope() as session:
+            t = session.exec(select(Task).where(Task.public_id == public_id)).first()
+            if t is not None:
+                t.status = TaskStatus.FAILED
+                t.error = f"{type(e).__name__}: {e}"
+                session.add(t)
+        get_bus().publish_nowait(
+            Event(type="task.failed", topic=public_id, payload={"error": str(e)})
+        )
 
 
 # ── Response helpers ─────────────────────────────────────────────────
@@ -225,6 +248,7 @@ def _info_to_dict(info: Any) -> dict[str, Any]:
 
 def _brief_to_dict(info: Any) -> dict[str, Any]:
     """Convert a brief TaskInfo to a serializable dict."""
+    p = info.progress
     return {
         "public_id": info.public_id,
         "request": info.request,
@@ -237,8 +261,8 @@ def _brief_to_dict(info: Any) -> dict[str, Any]:
         "finished_at": info.finished_at,
         "updated_at": info.updated_at,
         "progress": {
-            "total_steps": info.progress.total_steps,
-            "completed_steps": info.progress.completed_steps,
-            "percent": info.progress.percent,
+            "total_steps": getattr(p, "total_steps", 0) or 0,
+            "completed_steps": getattr(p, "completed_steps", 0) or 0,
+            "percent": getattr(p, "percent", 0.0) or 0.0,
         },
     }

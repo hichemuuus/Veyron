@@ -30,7 +30,7 @@ export function PlanProgress({ events }: { events: WsEvent[] }) {
   const activeStep = plan.steps.find((s) => s.status === 'running')
 
   return (
-    <div className="rounded-xl border border-ink-200/70 bg-ink-50/50 p-3.5">
+    <div className="rounded-xl border border-ink-200/70 bg-ink-100/50 p-3.5">
       <div className="mb-2.5 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <span className="hud-label text-violet-600">Plan</span>

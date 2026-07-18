@@ -94,3 +94,21 @@ scheduled jobs run reliably; voice path works end-to-end where implemented.
 - Tests accompany every feature
 - Security review before each phase exits
 - `README.md` kept current with run/dev instructions
+
+---
+
+## Phase 17 — Learning & Automation ✅ *(2026-07-15)*
+
+**Goal:** Veyron continuously improves from real user interactions.
+
+Deliverables:
+- Reflection Engine — structured post-task analysis with confidence, planning quality, tool selection quality, parameter quality, memory usefulness scoring; persisted to DB with retrieval and aggregate stats
+- Long-Term Memory — importance scoring, duplicate detection, memory merging, summarization, decay/pruning, user profile generation
+- Skill Learning — automatic detection of repeated workflow patterns from user history
+- Workflow Engine — reusable workflows with variables, conditions, retries, failure policies
+- Autonomous Improvement — dataset growth detection, benchmark regression detection, model version rollback, promotion guard (never deploy weaker)
+- Plugin SDK — plugin base classes, registry with isolation, lifecycle management, example plugin
+- Learning Dashboard — 11 read-only API endpoints + frontend page with stat cards and tabbed data views
+- Benchmark Suites — 5 suites: reflection quality, memory quality, workflow prediction, skill detection, learning progress
+
+**Exit criteria:** All 8 components implemented and tested; 567+ existing tests pass; 30 benchmark tests pass; no APIs broken; no backend contracts changed.

@@ -32,7 +32,7 @@ export function MemoryIndicator({ active }: { active: boolean }) {
 
   if (!stats) {
     return (
-      <div className="flex items-center gap-2 rounded-full border border-ink-200 bg-white px-2.5 py-1">
+      <div className="flex items-center gap-2 rounded-full border border-ink-200 bg-ink-100 px-2.5 py-1">
         <span className="h-1.5 w-1.5 rounded-full bg-ink-300" />
         <span className="hud-label">Memory</span>
         <span className="font-mono text-[10px] text-ink-400">—</span>
@@ -41,7 +41,7 @@ export function MemoryIndicator({ active }: { active: boolean }) {
   }
 
   return (
-    <div className="flex items-center gap-2 rounded-full border border-ink-200 bg-white px-2.5 py-1">
+    <div className="flex items-center gap-2 rounded-full border border-ink-200 bg-ink-100 px-2.5 py-1">
       <span
         className={`h-1.5 w-1.5 rounded-full ${
           active ? 'bg-sig-500 animate-pulseDot' : 'bg-violet-400'

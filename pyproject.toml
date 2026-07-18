@@ -8,6 +8,10 @@ license = { text = "MIT" }
 authors = [{ name = "Veyron" }]
 
 dependencies = [
+    # Retry logic for LLM calls
+    "tenacity>=9.0.0",
+    # MLflow experiment tracking
+    "mlflow>=2.16.0",
     # Web / API
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
@@ -22,6 +26,7 @@ dependencies = [
     # Database
     "SQLAlchemy>=2.0.35",
     "SQLModel>=0.0.22",
+    "aiosqlite>=0.20.0",
 
     # System
     "psutil>=6.0.0",

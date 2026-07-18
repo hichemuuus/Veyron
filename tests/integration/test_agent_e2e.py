@@ -193,7 +193,7 @@ class TestAgentReActLoop:
         result = await agent.run("What's in the current directory?", task_public_id="track_tools")
 
         tracker = ExecutionTracker()
-        timeline = tracker.get_timeline("track_tools")
+        timeline = await tracker.get_timeline("track_tools")
         step_types = {s["step_type"] for s in timeline}
         assert "llm_call" in step_types
         assert "tool_call" in step_types
@@ -202,6 +202,6 @@ class TestAgentReActLoop:
         assert len(tool_steps) == 1
         assert tool_steps[0]["name"] == "filesystem_read"
 
-        summary = tracker.get_task_summary("track_tools")
+        summary = await tracker.get_task_summary("track_tools")
         assert summary["tool_count"] == 1
         assert summary["status"] == "completed"

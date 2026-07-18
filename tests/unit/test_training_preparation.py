@@ -347,7 +347,7 @@ def test_format_skips_empty_request(tmp_path: Path):
 
 
 def test_intent_categories_are_defined():
-    assert len(INTENT_CATEGORIES) == 10
+    assert len(INTENT_CATEGORIES) == 13
     assert "conversation" in INTENT_CATEGORIES
     assert "system_management" in INTENT_CATEGORIES
     assert "file_operation" in INTENT_CATEGORIES

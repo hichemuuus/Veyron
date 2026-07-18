@@ -1,7 +1,9 @@
 """System monitoring tool.
 
-Reports real CPU, RAM, disk, and process stats via psutil. No fake data —
-every number comes from an actual measurement. See ARCHITECTURE.md §5.
+Reports CPU, RAM, disk, and process stats via the monitoring service
+cache for the hot path (overview / processes).  Individual detail
+endpoints (cpu, memory, disk, health) still sample live because they
+aren't performance-critical.  See ARCHITECTURE.md §5.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from veyron.db.base import sync_session_scope
 from veyron.db.models import ToolInvocation
+from veyron.monitor import get_monitor, SystemSnapshot
 from veyron.security.command_policy import PermissionLevel
 from veyron.tools.base import Tool, ToolResult
 
@@ -62,13 +65,27 @@ class SystemMonitorTool(Tool):
     # --- Operations -------------------------------------------------------
 
     def _overview(self) -> ToolResult:
-        vm = psutil.virtual_memory()
+        monitor = get_monitor()
+        if monitor is not None:
+            snap = monitor.cache.get()
+            cpu_pct = snap.cpu.percent
+            cpu_count = snap.cpu.count_logical
+            mem_total = snap.memory.total
+            mem_used = snap.memory.used
+            mem_pct = snap.memory.percent
+        else:
+            cpu_pct = psutil.cpu_percent(interval=0.1)
+            cpu_count = psutil.cpu_count(logical=True) or 0
+            vm = psutil.virtual_memory()
+            mem_total = vm.total
+            mem_used = vm.used
+            mem_pct = vm.percent
         data = {
-            "cpu_percent": psutil.cpu_percent(interval=None),
-            "cpu_count": psutil.cpu_count(logical=True),
-            "memory_total": vm.total,
-            "memory_used": vm.used,
-            "memory_percent": vm.percent,
+            "cpu_percent": cpu_pct,
+            "cpu_count": cpu_count,
+            "memory_total": mem_total,
+            "memory_used": mem_used,
+            "memory_percent": mem_pct,
             "disk_percent": _disk_avg_percent(),
             "boot_time": psutil.boot_time(),
         }
@@ -81,7 +98,6 @@ class SystemMonitorTool(Tool):
         return ToolResult(output=text, data=data)
 
     def _cpu(self) -> ToolResult:
-        # interval=0.1 gives a real short-sample reading.
         per_cpu = psutil.cpu_percent(interval=0.1, percpu=True)
         freq = psutil.cpu_freq()
         load = psutil.getloadavg() if hasattr(psutil, "getloadavg") else None
@@ -150,23 +166,41 @@ class SystemMonitorTool(Tool):
         return ToolResult(output="\n".join(lines) or "(no mounts)", data=data)
 
     def _processes(self, count: int, sort_by: str) -> ToolResult:
-        procs = []
-        for p in psutil.process_iter(["pid", "name", "username", "cpu_percent", "memory_percent"]):
-            info = p.info
-            info["cpu_percent"] = info.get("cpu_percent") or 0.0
-            info["memory_percent"] = info.get("memory_percent") or 0.0
-            procs.append(info)
-        key = "cpu_percent" if sort_by == "cpu" else "memory_percent"
-        procs.sort(key=lambda x: x.get(key, 0), reverse=True)
-        top = procs[:count]
-        data = {"processes": top, "sort_by": key}
+        monitor = get_monitor()
+        if monitor is not None:
+            snap = monitor.cache.get()
+            top = list(snap.top_processes)
+        else:
+            top = self._live_processes()
+        if sort_by == "memory":
+            top.sort(key=lambda p: p.memory_percent, reverse=True)
+        top = top[:count]
+        data = {
+            "processes": [
+                {
+                    "pid": p.pid,
+                    "name": p.name,
+                    "username": p.username,
+                    "cpu_percent": p.cpu_percent,
+                    "memory_percent": p.memory_percent,
+                }
+                for p in top
+            ],
+            "sort_by": "cpu_percent" if sort_by == "cpu" else "memory_percent",
+        }
         lines = [f"{'PID':>7}  {'CPU%':>6}  {'MEM%':>6}  NAME"]
-        for p in top:
+        for p in data["processes"]:
             lines.append(
                 f"{p.get('pid','-'):>7}  {p.get('cpu_percent',0):>6.1f}  "
                 f"{p.get('memory_percent',0):>6.1f}  {p.get('name','?')}"
             )
         return ToolResult(output="\n".join(lines), data=data)
+
+    def _live_processes(self):
+        """Fallback: sample processes directly when monitor is unavailable."""
+        from veyron.monitor.collectors import sample_processes
+        top, _ = sample_processes(None, top_n=50)
+        return list(top)
 
     def _health(self) -> ToolResult:
         issues = []
@@ -183,7 +217,6 @@ class SystemMonitorTool(Tool):
                 continue
             if usage.percent > 90:
                 issues.append(f"Low disk space on {part.mountpoint}: {usage.percent:.0f}% used")
-        # Temperature sensors (best-effort; often absent on desktops).
         try:
             temps = psutil.sensors_temperatures()
             for name, entries in (temps or {}).items():

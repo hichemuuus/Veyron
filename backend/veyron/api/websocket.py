@@ -19,6 +19,8 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from veyron.core.events import get_bus
+from veyron.monitor.service import get_monitor
+from veyron.monitor.snapshot import SystemSnapshot
 from veyron.security.confirmations import get_manager
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,73 @@ class ClientMessage(BaseModel):
     confirmation_id: str | None = None
     approved: bool | None = None
     reason: str | None = None
+
+
+def _snapshot_to_dict(snap: SystemSnapshot) -> dict:
+    """Convert a SystemSnapshot to a JSON-safe dict for WebSocket push."""
+    from veyron.monitor.snapshot import SystemSnapshot as SS
+    return {
+        "cpu": {
+            "percent": snap.cpu.percent,
+            "per_cpu": list(snap.cpu.per_cpu),
+            "frequency_mhz": snap.cpu.frequency_mhz,
+            "count_logical": snap.cpu.count_logical,
+            "count_physical": snap.cpu.count_physical,
+            "load_avg": list(snap.cpu.load_avg),
+        },
+        "memory": {
+            "total": snap.memory.total,
+            "available": snap.memory.available,
+            "used": snap.memory.used,
+            "free": snap.memory.free,
+            "percent": snap.memory.percent,
+            "swap_total": snap.memory.swap_total,
+            "swap_used": snap.memory.swap_used,
+            "swap_percent": snap.memory.swap_percent,
+        },
+        "gpu_exists": snap.gpu_exists,
+        "disks": [
+            {
+                "device": d.device,
+                "mountpoint": d.mountpoint,
+                "fstype": d.fstype,
+                "total": d.total,
+                "used": d.used,
+                "free": d.free,
+                "percent": d.percent,
+            }
+            for d in snap.disks
+        ],
+        "network": {
+            "bytes_sent": snap.network.bytes_sent,
+            "bytes_recv": snap.network.bytes_recv,
+            "packets_sent": snap.network.packets_sent,
+            "packets_recv": snap.network.packets_recv,
+            "bytes_sent_per_sec": snap.network.bytes_sent_per_sec,
+            "bytes_recv_per_sec": snap.network.bytes_recv_per_sec,
+        },
+        "temperatures": [
+            {
+                "name": t.name,
+                "label": t.label,
+                "current": t.current,
+                "high": t.high,
+                "critical": t.critical,
+            }
+            for t in snap.temperatures
+        ],
+        "top_processes": [
+            {
+                "pid": p.pid,
+                "name": p.name,
+                "username": p.username,
+                "cpu_percent": p.cpu_percent,
+                "memory_percent": p.memory_percent,
+            }
+            for p in snap.top_processes
+        ],
+        "timestamp": snap.timestamp,
+    }
 
 
 @router.websocket("/ws")
@@ -86,8 +155,35 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     # Default: subscribe to all events on connect.
     all_task = asyncio.create_task(forward_events(None))
+
+    # Start a background task that pushes monitoring snapshots (only if active).
+    async def _push_monitor_snapshots() -> None:
+        try:
+            while True:
+                monitor = get_monitor()
+                if monitor is not None:
+                    snap = monitor.cache.get()
+                    await websocket.send_json({
+                        "type": "monitor.snapshot",
+                        "topic": None,
+                        "ts": snap.timestamp,
+                        "payload": _snapshot_to_dict(snap),
+                    })
+                await asyncio.sleep(0.2)
+        except asyncio.CancelledError:
+            pass
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.debug("monitor push error: %s", e)
+
+    monitor_task: asyncio.Task | None = None
+    if get_monitor() is not None:
+        monitor_task = asyncio.create_task(_push_monitor_snapshots())
     async with topic_lock:
         topic_forwarders[None] = all_task
+        if monitor_task is not None:
+            topic_forwarders["__monitor__"] = monitor_task
 
     try:
         while True:
