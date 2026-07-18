@@ -44,21 +44,32 @@ flowchart TB
     AI --> ErrRec[Error Recovery]
 ```
 
-## Quick Start
+## Screenshots
 
-### System Requirements
-- Python 3.11-3.13
-- Node.js 18+
-- Rust (optional, for Tauri desktop build)
-- Ollama (recommended for local LLM)
+> Screenshots and demo GIF coming soon. See [assets/](assets/) for details.
 
-### Development Setup
+![Veyron Dashboard](assets/veyron-screenshot.png)
+*Main dashboard — system overview, task management, and AI agent workspace.*
+
+## Installation
+
+### End Users
+
+Download the latest installer from the [GitHub Releases](https://github.com/hichemuuus/Veyron/releases) page:
+
+1. Download `Veyron_X.Y.Z_x64-setup.exe`
+2. Run the installer (no admin required — installs to `%LOCALAPPDATA%/Veyron/`)
+3. Launch Veyron from the Start Menu or desktop shortcut
+4. The application checks for updates automatically
+
+**Requirements:** Windows 10/11 64-bit, Ollama (optional for local LLM), 4GB+ RAM.
+
+### Developers
 
 ```bash
 # Backend
 uv sync
 cp config.example.yaml config.yaml
-# Edit config.yaml with your settings
 uv run uvicorn veyron.main:app --reload
 
 # Frontend (browser only)
@@ -72,6 +83,20 @@ npm run tauri:dev
 
 ### Production Build
 See [BUILD.md](BUILD.md) and [INSTALLATION.md](docs/INSTALLATION.md).
+
+## Demo
+
+Describe a goal in natural language, and Veyron handles the rest:
+
+> *"Find large files on my desktop, summarize what they contain, and create a report."*
+
+Veyron will:
+1. Plan the multi-step task
+2. Execute tools (file search, analysis, summarization)
+3. Verify each result
+4. Present a final report
+
+See [docs/DEMO.md](docs/DEMO.md) for more examples.
 
 ## Configuration
 
@@ -92,7 +117,13 @@ See [config.example.yaml](config.example.yaml) for all options.
 
 ## Project Status
 
-Veyron v1.0.0 -- Production-ready. Active development continues.
+**v1.0.0** — First public release. Production-ready.
+
+- **Release**: [github.com/hichemuuus/Veyron/releases](https://github.com/hichemuuus/Veyron/releases)
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
+- **License**: MIT
+
+Updates are delivered automatically via the built-in updater.
 
 ## License
 

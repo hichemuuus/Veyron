@@ -97,6 +97,10 @@ interface AppState {
   // system monitoring snapshot (pushed via WebSocket)
   systemSnapshot: SystemSnapshot | null
   setSystemSnapshot: (snap: SystemSnapshot) => void
+
+  // first-run experience
+  firstRunDone: boolean
+  setFirstRunDone: (v: boolean) => void
 }
 
 const MAX_EVENTS = 400
@@ -251,4 +255,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   systemSnapshot: null,
   setSystemSnapshot: (snap) => set({ systemSnapshot: snap }),
+
+  firstRunDone: localStorage.getItem('veyron-first-run-done') === '1',
+  setFirstRunDone: (v) => {
+    set({ firstRunDone: v })
+    localStorage.setItem('veyron-first-run-done', v ? '1' : '')
+  },
 }))

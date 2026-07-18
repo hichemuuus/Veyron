@@ -10,7 +10,7 @@
 
 ```bash
 # Full suite
-cd paios
+cd veyron
 $env:PYTHONPATH="backend"
 pytest
 

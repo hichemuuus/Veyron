@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback, type ReactNode } from 'react'
+import { invoke } from '@tauri-apps/api/core'
 import { useAppStore } from '../stores/appStore'
+import { useUpdateStore } from '../stores/updateStore'
 import { getLastRequestMetrics, getRequestHistory, api } from '../api/client'
 import { getWsClient } from '../api/websocket'
 import { getLastHealthCheckError } from '../hooks/useWebSocket'
@@ -54,6 +56,19 @@ function statusMessage(status: number): string {
   return messages[status] ?? ''
 }
 
+function updateStatusLabel(status: { type: string; error?: string }): string {
+  switch (status.type) {
+    case 'idle': return 'Up to date'
+    case 'checking': return 'Checking...'
+    case 'available': return 'Update available'
+    case 'downloading': return 'Downloading...'
+    case 'installing': return 'Installing...'
+    case 'done': return 'Restart required'
+    case 'failed': return `Failed: ${status.error ?? 'unknown error'}`
+    default: return status.type
+  }
+}
+
 function statusTone(status: number | null): string {
   if (status == null) return 'bad'
   if (status >= 200 && status < 400) return 'ok'
@@ -79,8 +94,10 @@ function ErrorDisplay({ error, stack, devMode }: { error: string; stack?: string
 
 export function DiagnosticsPage() {
   const store = useAppStore()
+  const updateStore = useUpdateStore()
   const [backendInfoState, setBackendInfoState] = useState<SectionLoadState<BackendInfo>>({ data: null, error: null, loading: false })
   const [backendVersion, setBackendVersion] = useState<string>('')
+  const [frontendVersion, setFrontendVersion] = useState<string>('')
   const [startupDuration, setStartupDuration] = useState<string>('')
   const [devMode, setDevMode] = useState(false)
 
@@ -104,6 +121,12 @@ export function DiagnosticsPage() {
       setStartupDuration(`${elapsed}s`)
     }
     loadBackendInfo()
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
+    if (isTauri) {
+      invoke<string>('get_app_version').then(setFrontendVersion).catch(() => setFrontendVersion('1.0.0'))
+    } else {
+      setFrontendVersion('1.0.0 (dev)')
+    }
   }, [store.startupStartedAt, loadBackendInfo])
 
   const ws = getWsClient()
@@ -177,7 +200,8 @@ export function DiagnosticsPage() {
           <Row label="Startup Duration" value={startupDuration || '—'} />
           <Row label="Backend PID" value={store.backendPid != null ? String(store.backendPid) : '—'} />
           <Row label="Backend Version" value={backendVersion || '—'} />
-          <Row label="Frontend Version" value="1.0.0" />
+          <Row label="Frontend Version" value={frontendVersion || '—'} />
+          <Row label="Update Status" value={updateStatusLabel(updateStore.status)} tone={updateStore.status.type === 'idle' ? 'ok' : updateStore.status.type === 'failed' ? 'bad' : 'warn'} />
           <Row label="Platform" value={navigator.platform} />
           <Row label="User Agent" value={navigator.userAgent.slice(0, 60)} />
         </Section>
@@ -264,10 +288,18 @@ export function DiagnosticsPage() {
           <Row label="Connected" value={String(ws.connected)} tone={ws.connected ? 'ok' : 'bad'} />
         </Section>
 
+        <Section title="Updater">
+          <Row label="Status" value={updateStatusLabel(updateStore.status)} tone={updateStore.status.type === 'idle' ? 'ok' : updateStore.status.type === 'failed' ? 'bad' : 'warn'} />
+          <Row label="Current Version" value={frontendVersion || '—'} />
+          <Row label="Last Checked" value={updateStore.lastChecked ? new Date(updateStore.lastChecked).toLocaleString() : '—'} />
+          <Row label="Channel" value="stable" />
+        </Section>
+
         <Section title="Environment">
           <Row label="isTauri" value={String(typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window)} />
           <Row label="Port" value="8000" />
-          <Row label="DB" value="backend/data/veyron.db" />
+          <Row label="DB Path" value={backendInfoState.data ? 'veyron.db (APPDATA)' : 'backend/data/veyron.db'} />
+          <Row label="Models Dir" value={backendInfoState.data ? 'models/ (APPDATA)' : 'backend/data/models/'} />
         </Section>
       </div>
     </div>

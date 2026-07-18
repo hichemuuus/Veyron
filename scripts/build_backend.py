@@ -28,8 +28,52 @@ SIDECAR_NAME = "veyron-backend"
 TARGET_TRIPLE = "x86_64-pc-windows-msvc"
 SIDECAR_OUT = f"{SIDECAR_NAME}-{TARGET_TRIPLE}.exe"
 
+# Minimum Python version required by the project
+MIN_PYTHON = (3, 11)
+MAX_PYTHON = (3, 14)  # exclusive — Python >=3.14 is not yet supported
+
+
+def _check_environment() -> None:
+    """Validate Python version, virtual environment, and critical deps."""
+    version = sys.version_info[:2]
+
+    if version < MIN_PYTHON:
+        print(f"ERROR: Python {version[0]}.{version[1]} is too old. "
+              f"Need >= {MIN_PYTHON[0]}.{MIN_PYTHON[1]}.")
+        sys.exit(1)
+    if version >= MAX_PYTHON:
+        print(f"ERROR: Python {version[0]}.{version[1]} is not supported. "
+              f"Need < {MAX_PYTHON[0]}.{MAX_PYTHON[1]}.")
+        sys.exit(1)
+
+    # Virtual environment check
+    if sys.prefix == sys.base_prefix:
+        print("WARNING: not running inside a virtual environment. "
+              "The build may use the wrong Python version or missing deps.")
+
+    # Dependency checks
+    missing = []
+    try:
+        import psutil  # noqa: F401
+    except ImportError:
+        missing.append("psutil")
+
+    try:
+        import PyInstaller  # noqa: F401
+    except ImportError:
+        missing.append("PyInstaller")
+
+    if missing:
+        print(f"ERROR: missing required packages: {', '.join(missing)}")
+        print("Install them with: python -m pip install " + " ".join(missing))
+        sys.exit(1)
+
+    print(f"Environment OK: Python {version[0]}.{version[1]} "
+          f"({'venv' if sys.prefix != sys.base_prefix else 'system'})")
+
 
 def build_sidecar():
+    _check_environment()
     os.makedirs(BINARIES_DIR, exist_ok=True)
 
     HIDDEN_IMPORTS = [

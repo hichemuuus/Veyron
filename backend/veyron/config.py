@@ -12,6 +12,8 @@ All tunable values live here. See DECISIONS.md for the rationale behind defaults
 from __future__ import annotations
 
 import enum
+import os
+import sys as _sys
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -51,10 +53,22 @@ import yaml
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Project root = parent of the backend/ directory.
+# ── Path resolution ──────────────────────────────────────────────────
+# When running as a PyInstaller binary the extraction directory is
+# ephemeral — use %APPDATA%/Veyron/veyron-data for persistence across
+# updates.  In development, use the project-relative location.
+
+_IS_FROZEN = getattr(_sys, "frozen", False) and hasattr(_sys, "_MEIPASS")
+
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 BACKEND_ROOT = PROJECT_ROOT / "backend"
-DATA_DIR = BACKEND_ROOT / "data"
+
+if _IS_FROZEN:
+    _base = Path(os.environ.get("APPDATA", str(Path.home() / "AppData" / "Roaming"))) / "Veyron"
+    DATA_DIR = _base / "veyron-data"
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+else:
+    DATA_DIR = BACKEND_ROOT / "data"
 
 
 class SecurityConfig(BaseSettings):

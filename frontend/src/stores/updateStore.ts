@@ -16,6 +16,7 @@ interface UpdateStore {
   currentVersion: string
   lastChecked: string | null
   listenersInitialized: boolean
+  showUpdateDialog: boolean
 
   checkNow: () => Promise<void>
   installUpdate: () => Promise<void>
@@ -23,6 +24,7 @@ interface UpdateStore {
   restartApp: () => Promise<void>
   setStatus: (status: UpdateStatus) => void
   setCurrentVersion: (v: string) => void
+  setShowUpdateDialog: (show: boolean) => void
 }
 
 let unlistenStatus: (() => void) | undefined
@@ -34,6 +36,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
   currentVersion: '',
   lastChecked: null,
   listenersInitialized: false,
+  showUpdateDialog: false,
 
   checkNow: async () => {
     set({ status: { type: 'checking' } })
@@ -49,6 +52,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
             downloadUrl: info.download_url,
           },
           lastChecked: new Date().toISOString(),
+          showUpdateDialog: true,
         })
       } else {
         set({ status: { type: 'idle' }, lastChecked: new Date().toISOString() })
@@ -89,6 +93,7 @@ export const useUpdateStore = create<UpdateStore>((set, get) => ({
 
   setStatus: (status) => set({ status }),
   setCurrentVersion: (v) => set({ currentVersion: v }),
+  setShowUpdateDialog: (show) => set({ showUpdateDialog: show }),
 }))
 
 /** Initialize update event listeners. Safe to call multiple times — cleans up first. */

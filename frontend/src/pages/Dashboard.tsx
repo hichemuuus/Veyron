@@ -9,6 +9,7 @@ import { Stat, StatusBadge, ProgressMeter, LoadingSpinner, ErrorBox, EmptyState 
 import { TaskRow } from '../components/task/TaskRow'
 import { Sparkline } from '../components/ui/Sparkline'
 import { fmtPct, fmtBytes } from '../lib/format'
+import { useUpdateStore } from '../stores/updateStore'
 
 const REFRESH_MS = 5000
 const SPARK_SAMPLES = 40
@@ -35,6 +36,7 @@ export function DashboardPage() {
         active={data?.active_tasks ?? 0}
         total={data?.total_tasks ?? 0}
       />
+      <WelcomeBanner />
       <section className="mt-8 grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat
           label="Active"
@@ -78,6 +80,60 @@ export function DashboardPage() {
           loading={loading && !data}
         />
       </section>
+    </div>
+  )
+}
+
+// ── First-run welcome banner ─────────────────────────────────────────────
+
+function WelcomeBanner() {
+  const firstRunDone = useAppStore((s) => s.firstRunDone)
+  const setFirstRunDone = useAppStore((s) => s.setFirstRunDone)
+  const updateStatus = useUpdateStore((s) => s.status)
+  const [dismissed, setDismissed] = useState(false)
+
+  if (firstRunDone || dismissed) return null
+
+  return (
+    <div className="mt-6 rounded-xl border border-sig-200/70 bg-gradient-to-br from-sig-50/80 to-ink-100/60 p-6 shadow-soft">
+      <div className="flex items-start justify-between gap-4">
+        <div className="min-w-0 space-y-3">
+          <h2 className="font-display text-lg font-semibold text-ink-900">Welcome to Veyron</h2>
+          <p className="max-w-xl text-sm leading-relaxed text-ink-600">
+            Veyron is your local AI productivity system. It plans multi-step tasks, executes
+            tools under security controls, remembers past work, and learns from every interaction.
+            Everything runs locally — no cloud required.
+          </p>
+          <div className="flex flex-wrap gap-4 pt-1">
+            <div className="flex items-center gap-2 text-xs text-ink-500">
+              <span className="h-2 w-2 rounded-full bg-ok-500" />
+              Backend online
+            </div>
+            <div className="flex items-center gap-2 text-xs text-ink-500">
+              <span className={`h-2 w-2 rounded-full ${updateStatus.type === 'idle' ? 'bg-ok-500' : 'bg-sig-500'}`} />
+              Updates {updateStatus.type === 'idle' ? 'up to date' : updateStatus.type === 'available' ? 'available' : 'configured'}
+            </div>
+            <div className="flex items-center gap-2 text-xs text-ink-500">
+              <span className="h-2 w-2 rounded-full bg-sig-500" />
+              AI engine ready
+            </div>
+          </div>
+          <div className="flex items-center gap-3 pt-1">
+            <Link
+              to="/agent"
+              className="focus-ring rounded-lg bg-sig-500 px-4 py-1.5 text-sm font-medium text-white shadow-soft transition-all hover:bg-sig-600"
+            >
+              Try a task
+            </Link>
+            <button
+              onClick={() => { setFirstRunDone(true); setDismissed(true) }}
+              className="focus-ring rounded-lg border border-ink-300 bg-ink-200 px-4 py-1.5 text-sm font-medium text-ink-700 transition-all hover:bg-ink-50"
+            >
+              Got it
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,9 +1,9 @@
 """Generate Tauri updater signing keys and sign update artifacts.
 
 Usage:
-    python scripts/sign_update.py generate-key     # Generate a new key pair
-    python scripts/sign_update.py sign <file>       # Sign a file with the private key
-    python scripts/sign_update.py verify <file>     # Verify a file signature
+    python scripts/sign_update.py generate-key                     # Generate a new key pair
+    python scripts/sign_update.py sign <file> [--version X.Y.Z]   # Sign a file + generate latest.json
+    python scripts/sign_update.py verify <file>                   # Verify a file signature
 """
 
 import json
@@ -53,8 +53,14 @@ def generate_key():
     print("  - UPDATER_PASSPHRASE: (optional) passphrase for the key")
 
 
-def sign_file(file_path: str):
-    """Sign a file with the Tauri updater private key."""
+def sign_file(file_path: str, version: str | None = None):
+    """Sign a file with the Tauri updater private key.
+
+    Args:
+        file_path: Path to the file to sign (e.g. the NSIS installer).
+        version: SemVer string. If omitted, extracted from *file_path*
+            or falls back to reading ``backend/veyron/__init__.py``.
+    """
     key_path = Path("veyron-updater-key.private")
     if not key_path.exists():
         print("Error: veyron-updater-key.private not found in current directory.")
@@ -66,7 +72,28 @@ def sign_file(file_path: str):
         print(f"Error: {file_path} not found")
         sys.exit(1)
 
-    print(f"Signing {file_path}...")
+    # Resolve version
+    if version is None:
+        # Try to extract from filename like Veyron_1.0.0_x64-setup.exe
+        import re
+        m = re.search(r"_(\d+\.\d+\.\d+)_", file_path.name)
+        if m:
+            version = m.group(1)
+            print(f"Version extracted from filename: {version}")
+        else:
+            # Fallback: read from __init__.py
+            init_py = Path(__file__).resolve().parent.parent / "backend" / "veyron" / "__init__.py"
+            if init_py.exists():
+                for line in init_py.read_text().splitlines():
+                    if line.startswith("__version__"):
+                        version = line.split('"')[1] if '"' in line else line.split("=")[1].strip().strip("'")
+                        print(f"Version from __init__.py: {version}")
+                        break
+            if not version:
+                version = "0.0.0"
+                print("WARNING: could not determine version, using 0.0.0")
+
+    print(f"Signing {file_path} (v{version})...")
     result = subprocess.run(
         ["npx", "tauri", "signer", "sign",
          "--private-key", str(key_path),
@@ -82,7 +109,6 @@ def sign_file(file_path: str):
     print(f"Signature: {signature[:80]}...")
 
     # Generate update JSON
-    version = "1.0.0"  # will be replaced by CI
     json_path = file_path.parent / "latest.json"
     update_json = {
         "version": version,
@@ -135,9 +161,15 @@ if __name__ == "__main__":
         generate_key()
     elif command == "sign":
         if len(sys.argv) < 3:
-            print("Usage: python scripts/sign_update.py sign <file>")
+            print("Usage: python scripts/sign_update.py sign <file> [--version X.Y.Z]")
             sys.exit(1)
-        sign_file(sys.argv[2])
+        file_path = sys.argv[2]
+        version = None
+        if "--version" in sys.argv:
+            idx = sys.argv.index("--version")
+            if idx + 1 < len(sys.argv):
+                version = sys.argv[idx + 1]
+        sign_file(file_path, version=version)
     elif command == "verify":
         if len(sys.argv) < 3:
             print("Usage: python scripts/sign_update.py verify <file>")

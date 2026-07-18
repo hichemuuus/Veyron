@@ -1,5 +1,5 @@
 /**
- * Frontend type contract — mirrors the backend (paios/api, paios/core, paios/db).
+ * Frontend type contract — mirrors the backend (veyron/api, veyron/core, veyron/db).
  *
  * IMPORTANT: these event names and payload shapes were verified directly against
  * the backend Python source. The backend is authoritative; do not "fix" names

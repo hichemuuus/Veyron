@@ -7,6 +7,8 @@ import { ConfirmationStack } from './ConfirmationStack'
 import { useWebSocket } from '../../hooks/useWebSocket'
 import { useInterval } from '../../hooks/useInterval'
 import { useAppStore } from '../../stores/appStore'
+import { useUpdateStore } from '../../stores/updateStore'
+import { UpdateDialog } from '../update/UpdateDialog'
 
 const NAV = [
   { to: '/', label: 'Home', icon: HomeIcon, end: true },
@@ -62,6 +64,8 @@ function StartupOverlay() {
 export function Layout() {
   useWebSocket()
   const location = useLocation()
+  const showUpdateDialog = useUpdateStore((s) => s.showUpdateDialog)
+  const setShowUpdateDialog = useUpdateStore((s) => s.setShowUpdateDialog)
 
   return (
     <div className="flex h-screen overflow-hidden bg-ink-50 text-ink-900">
@@ -75,11 +79,15 @@ export function Layout() {
       </div>
       <Toasts />
       <ConfirmationStack />
+      <UpdateDialog open={showUpdateDialog} onClose={() => setShowUpdateDialog(false)} />
     </div>
   )
 }
 
 function Sidebar() {
+  const updateStatus = useUpdateStore((s) => s.status)
+  const updateAvailable = updateStatus.type === 'available' || updateStatus.type === 'done'
+
   return (
     <aside className="flex w-60 shrink-0 flex-col border-r border-ink-200/80 bg-ink-50/80 backdrop-blur">
       <div className="px-5 py-5">
@@ -107,6 +115,11 @@ function Sidebar() {
                   }`}
                 />
                 <span>{n.label}</span>
+                {n.to === '/settings' && updateAvailable && (
+                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-sig-500 px-1.5 text-[10px] font-semibold text-white">
+                    {updateStatus.type === 'done' ? '!' : '1'}
+                  </span>
+                )}
               </>
             )}
           </NavLink>

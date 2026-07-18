@@ -11,7 +11,7 @@ Veyron includes two benchmark frameworks:
 
 ```bash
 # Agent evaluation
-cd paios
+cd veyron
 $env:PYTHONPATH="backend"
 python benchmarks/runner.py --suite all
 

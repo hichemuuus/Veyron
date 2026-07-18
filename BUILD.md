@@ -137,7 +137,7 @@ npx tauri signer generate -w ./veyron-updater-key.private
 
 Veyron checks for updates via:
 1. **Tauri updater plugin** (primary) — configured endpoint
-2. **GitHub Releases API** (fallback) — `https://api.github.com/repos/anomalyco/veyron/releases/latest`
+2. **GitHub Releases API** (fallback) — `https://api.github.com/repos/hichemuuus/Veyron/releases/latest`
 
 To publish an update:
 1. Build the installer with signing env vars set (see above)

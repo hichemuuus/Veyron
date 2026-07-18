@@ -29,11 +29,33 @@ logger = logging.getLogger(__name__)
 # ── Tracking state types (stored in the service, updated each cycle) ────
 
 
+BUSY_FIELDS = ("user", "system", "nice", "iowait")
+"""Fields that count as CPU-busy time (platform-dependent subset present)."""
+
+
+def _busy_delta(
+    now_obj: Any,
+    prev_dict: dict[str, float],
+) -> float:
+    """Sum delta across all BUSY_FIELDS present on this platform."""
+    total = 0.0
+    for f in BUSY_FIELDS:
+        cur = getattr(now_obj, f, None)
+        if cur is not None:
+            total += cur - prev_dict.get(f, 0.0)
+    return total
+
+
+def _obj_to_dict(obj: Any) -> dict[str, float]:
+    """Convert a named tuple to a plain dict (only numeric fields)."""
+    return {f: getattr(obj, f) for f in obj._fields if isinstance(getattr(obj, f), (int, float))}
+
+
 @dataclass
 class CpuTracker:
     """Tracks previous CPU times for delta computation."""
-    prev_cpu_times: tuple[float, ...] = ()
-    prev_per_cpu_times: tuple[tuple[float, ...], ...] = ()
+    prev_values: dict[str, float] = field(default_factory=dict)
+    prev_per_cpu: list[dict[str, float]] = field(default_factory=list)
     prev_wall: float = 0.0
 
 
@@ -54,11 +76,44 @@ class NetworkTracker:
 # ── Collector implementations ──────────────────────────────────────────
 
 
+def _percent_from_delta(
+    delta_busy: float,
+    delta_total: float,
+) -> float:
+    """Convert (busy-time, total-time) to a clamped percentage."""
+    if delta_total <= 0.0:
+        return 0.0
+    return max(0.0, min(100.0, (delta_busy / delta_total) * 100.0))
+
+
+def _cpu_delta(
+    now: Any,
+    prev: dict[str, float],
+) -> tuple[float, float]:
+    """Return (busy_delta, total_delta) between *now* and *prev* scputimes.
+
+    ``now`` is a ``psutil.scputimes`` named tuple for the current call;
+    ``prev`` is the previous values stored as a dict.  Both contain
+    wall-clock seconds (from ``psutil.cpu_times()``).
+    """
+    total = 0.0
+    busy = 0.0
+    for f in now._fields:
+        cur = getattr(now, f, 0.0)
+        d = cur - prev.get(f, 0.0)
+        if d < 0.0:
+            d = 0.0  # counter wraparound / first-run safety
+        total += d
+        if f in BUSY_FIELDS:
+            busy += d
+    return busy, total
+
+
 def sample_cpu(tracker: CpuTracker | None) -> tuple[CpuSnapshot, CpuTracker]:
     """Sample CPU: percent, per-core, frequency, load average.
 
-    Uses absolute CPU-time deltas so results are accurate regardless of
-    the sampling interval (no ``interval=`` parameter needed).
+    Uses ``psutil.cpu_times()`` and wall-clock deltas for accuracy
+    regardless of sampling interval (no ``interval=`` parameter needed).
     """
     now = time.monotonic()
 
@@ -72,64 +127,49 @@ def sample_cpu(tracker: CpuTracker | None) -> tuple[CpuSnapshot, CpuTracker]:
     except OSError:
         load_avg = ()
 
-    if tracker is None or not tracker.prev_cpu_times:
+    # Always fetch fresh absolute CPU times.
+    overall = psutil.cpu_times()
+    per_cpu = psutil.cpu_times(percpu=True)
+
+    if tracker is None or not tracker.prev_values:
         # First run — capture baseline, return 0% values.
-        per_cpu_raw = psutil.cpu_times_percent(percpu=True, interval=0)
-        overall_raw = psutil.cpu_times_percent(interval=0)
         tracker = CpuTracker(
-            prev_cpu_times=tuple(overall_raw),
-            prev_per_cpu_times=tuple(tuple(c) for c in per_cpu_raw),
+            prev_values=_obj_to_dict(overall),
+            prev_per_cpu=[_obj_to_dict(c) for c in per_cpu],
             prev_wall=now,
         )
-        per_cpu = tuple(c.user + c.system + c.nice + c.iowait for c in per_cpu_raw)
         return CpuSnapshot(
-            percent=overall_raw.user + overall_raw.system + overall_raw.nice,
-            per_cpu=per_cpu,
+            percent=0.0,
+            per_cpu=tuple(0.0 for _ in per_cpu),
             frequency_mhz=freq_mhz,
             count_logical=cpu_count_logical,
             count_physical=cpu_count_physical,
             load_avg=load_avg,
         ), tracker
 
-    # Delta computation over the actual elapsed interval.
-    now_cpu_times = psutil.cpu_times_percent(interval=0)
-    now_per_cpu = psutil.cpu_times_percent(percpu=True, interval=0)
+    # Delta computation against the previous sample.
+    delta_sec = now - tracker.prev_wall
+    if delta_sec < 0.001:
+        delta_sec = 0.001
 
-    delta = now - tracker.prev_wall
-    if delta < 0.001:
-        delta = 0.001  # avoid division-by-zero
+    busy_delta, total_delta = _cpu_delta(overall, tracker.prev_values)
+    overall_pct = round(_percent_from_delta(busy_delta, total_delta), 1)
 
-    overall_busy = (
-        (now_cpu_times.user - tracker.prev_cpu_times[0])
-        + (now_cpu_times.system - tracker.prev_cpu_times[2])
-        + (now_cpu_times.nice - tracker.prev_cpu_times[1])
-        + (now_cpu_times.iowait - tracker.prev_cpu_times[4])
-        if hasattr(now_cpu_times, "iowait") else 0.0
-    )
-    overall_busy = max(0.0, min(100.0, overall_busy * 100.0))
-
-    per_cpu = []
-    for i, c in enumerate(now_per_cpu):
-        if i < len(tracker.prev_per_cpu_times):
-            busy = (c.user - tracker.prev_per_cpu_times[i][0]) + (c.system - tracker.prev_per_cpu_times[i][2])
-            if hasattr(c, "nice"):
-                busy += c.nice - tracker.prev_per_cpu_times[i][1]
-            if hasattr(c, "iowait"):
-                busy += c.iowait - tracker.prev_per_cpu_times[i][4]
-            busy = max(0.0, min(100.0, busy * 100.0))
-            per_cpu.append(busy)
-        else:
-            per_cpu.append(0.0)
+    per_cpu_pcts: list[float] = []
+    for i, c in enumerate(per_cpu):
+        prev = tracker.prev_per_cpu[i] if i < len(tracker.prev_per_cpu) else {}
+        b, t = _cpu_delta(c, prev)
+        per_cpu_pcts.append(round(_percent_from_delta(b, t), 1))
 
     tracker = CpuTracker(
-        prev_cpu_times=tuple(now_cpu_times),
-        prev_per_cpu_times=tuple(tuple(c) for c in now_per_cpu),
+        prev_values=_obj_to_dict(overall),
+        prev_per_cpu=[_obj_to_dict(c) for c in per_cpu],
         prev_wall=now,
     )
 
     return CpuSnapshot(
-        percent=round(overall_busy, 1),
-        per_cpu=tuple(round(v, 1) for v in per_cpu),
+        percent=overall_pct,
+        per_cpu=tuple(per_cpu_pcts),
         frequency_mhz=freq_mhz,
         count_logical=cpu_count_logical,
         count_physical=cpu_count_physical,
