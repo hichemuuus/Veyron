@@ -7,9 +7,10 @@ Usage:
 """
 
 import json
+import os
 import sys
 import subprocess
-import base64
+import tempfile
 from pathlib import Path
 
 
@@ -53,6 +54,25 @@ def generate_key():
     print("  - UPDATER_PASSPHRASE: (optional) passphrase for the key")
 
 
+def _resolve_key() -> tuple[Path, bool]:
+    """Return (key_path, was_written) — writes key from env var if needed."""
+    key_path = Path("veyron-updater-key.private")
+    if key_path.exists():
+        return key_path, False
+
+    for env_var in ("UPDATER_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY"):
+        val = os.environ.get(env_var)
+        if val:
+            key_path.write_text(val)
+            print(f"Key written from ${env_var}")
+            return key_path, True
+
+    print("Error: signing key not found.")
+    print("  Place veyron-updater-key.private in the current directory, or")
+    print("  set UPDATER_PRIVATE_KEY or TAURI_SIGNING_PRIVATE_KEY env var.")
+    sys.exit(1)
+
+
 def sign_file(file_path: str, version: str | None = None):
     """Sign a file with the Tauri updater private key.
 
@@ -61,11 +81,7 @@ def sign_file(file_path: str, version: str | None = None):
         version: SemVer string. If omitted, extracted from *file_path*
             or falls back to reading ``backend/veyron/__init__.py``.
     """
-    key_path = Path("veyron-updater-key.private")
-    if not key_path.exists():
-        print("Error: veyron-updater-key.private not found in current directory.")
-        print("Run 'python scripts/sign_update.py generate-key' first.")
-        sys.exit(1)
+    key_path, key_written = _resolve_key()
 
     file_path = Path(file_path)
     if not file_path.exists():
@@ -123,6 +139,10 @@ def sign_file(file_path: str, version: str | None = None):
     }
     json_path.write_text(json.dumps(update_json, indent=2))
     print(f"Update manifest written to {json_path}")
+
+    if key_written:
+        key_path.unlink()
+        print("Cleaned up temporary key file")
 
 
 def verify_file(file_path: str):
