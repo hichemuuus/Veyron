@@ -15,8 +15,9 @@ from pathlib import Path
 import pytest
 from veyron.config import get_settings, reset_settings_cache
 from veyron.core.intelligence import classify_request
-from veyron.intelligence.intent.inference import reset_model
+from veyron.intelligence.intent.inference import ClassifierResult, reset_model
 from veyron.intelligence.intent.model import IntentModel
+from veyron.intelligence.intent_router.schema import IntentRouterPrediction
 from veyron.llm.micro.router import INTENT_CATEGORIES, Intent
 
 
@@ -122,6 +123,25 @@ class TestIntelligenceLayerEnabled:
         """When intent router is confident, micro-model result is used even with high threshold."""
         monkeypatch.setattr(
             get_settings().model, "micro_model_confidence_threshold", 0.99
+        )
+        monkeypatch.setattr(
+            "veyron.intelligence.intent_router.inference.route_request",
+            lambda req: IntentRouterPrediction(
+                request=req,
+                mode="react", mode_confidence=0.95,
+                domain="system", domain_confidence=0.95,
+                intent_category="system_management", intent_confidence=0.95,
+                requires_llm=False,
+                fallback_fields=[],
+            ),
+        )
+        monkeypatch.setattr(
+            "veyron.intelligence.intent.inference.classify_intent",
+            lambda text, model_path=None: ClassifierResult(
+                category="system_management",
+                confidence=0.95,
+                model_used="micro_model",
+            ),
         )
         intent = classify_request("What is the CPU usage?")
         # Intent router is confident (requires_llm=False), so the gate

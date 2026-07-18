@@ -241,22 +241,34 @@ class TestInference:
 
     def test_classify_intent_returns_classifier_result(self):
         reset_model()
-        result = classify_intent("What is the CPU usage?")
-        assert isinstance(result, ClassifierResult)
-        assert result.category in [
-            "question_answering",
-            "coding_task",
-            "project_analysis",
-            "file_operation",
-            "tool_execution",
-            "planning_task",
-            "debugging",
-            "system_management",
-            "research",
-            "conversation",
-        ]
-        assert 0.0 <= result.confidence <= 1.0
-        assert result.model_used == "micro_model"
+        model = IntentModel()
+        model.fit(
+            ["check cpu usage", "read file", "hello"],
+            ["system_management", "file_operation", "conversation"],
+        )
+        with tempfile.NamedTemporaryFile(suffix=".pkl", delete=False) as f:
+            model_path = f.name
+        try:
+            model.save(model_path)
+            result = classify_intent("What is the CPU usage?", model_path=model_path)
+            assert isinstance(result, ClassifierResult)
+            assert result.category in [
+                "question_answering",
+                "coding_task",
+                "project_analysis",
+                "file_operation",
+                "tool_execution",
+                "planning_task",
+                "debugging",
+                "system_management",
+                "research",
+                "conversation",
+            ]
+            assert 0.0 <= result.confidence <= 1.0
+            assert result.model_used == "micro_model"
+        finally:
+            Path(model_path).unlink(missing_ok=True)
+            reset_model()
 
     def test_classify_fallback_system_management(self):
         reset_model()
