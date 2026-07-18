@@ -1,6 +1,6 @@
 [package]
 name = "veyron-desktop"
-version = "1.0.0"
+version = "1.0.1"
 description = "Veyron AI Desktop — local AI productivity system"
 authors = ["Veyron"]
 edition = "2021"
