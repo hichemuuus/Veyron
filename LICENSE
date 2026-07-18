@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025-2026 Veyron
+Copyright (c) 2026 Hichem BOUHADJEB
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -12,10 +12,33 @@ furnished to do so, subject to the following conditions:
 The above copyright notice and this permission notice shall be included in all
 copies or substantial portions of the Software.
 
+
+────────────────────────────────────────────────────────────
+
+Veyron Notice:
+
+This software was not built to blend in.
+
+It was designed, engineered, and refined with the unreasonable expectation
+that software should feel less like a tool and more like an achievement.
+
+If you are reading this license, you are looking at the result of countless
+iterations, experiments, failures, and decisions made by someone who refused
+to ship something ordinary.
+
+You are free to use it, improve it, and build upon it.
+
+Just remember where it started.
+
+Great software is rarely created by following the crowd.
+
+────────────────────────────────────────────────────────────
+
+
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
 FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
