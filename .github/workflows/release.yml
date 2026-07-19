@@ -100,6 +100,8 @@ jobs:
           python scripts/sign_update.py sign \
             frontend/src-tauri/target/release/bundle/nsis/Veyron_*.exe \
             --version ${{ needs.create-release.outputs.version }}
+        env:
+          UPDATER_PRIVATE_KEY: ${{ secrets.UPDATER_PRIVATE_KEY }}
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
